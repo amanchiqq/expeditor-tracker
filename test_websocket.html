@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <p>Check console for messages</p>
+    <script>
+        const socket = io('http://127.0.0.1:8000', { path: '/socket.io' });
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket');
+            socket.emit('location_update', { task_id: 1, latitude: 55.78, longitude: 37.64 });
+        });
+        socket.on('location_update', (data) => {
+            console.log('Received:', data);
+        });
+        socket.on('connect_error', (err) => {
+            console.log('Connection error:', err);
+        });
+    </script>
+</body>
+</html>
+
