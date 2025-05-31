@@ -1,10 +1,10 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Query
 from databases import Database
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, DateTime
 import socketio
 from datetime import datetime
 import json
-
+    
 # Конфигурация базы данных
 DATABASE_URL = "postgresql://localhost/expeditor_db"
 database = Database(DATABASE_URL)
@@ -42,8 +42,10 @@ async def shutdown():
 
 # API: Получить все задачи
 @app.get("/tasks")
-async def get_tasks():
+async def get_tasks(expeditor_id: int = Query(None)):
     query = tasks.select()
+    if expeditor_id is not None:
+        query = query.where(tasks.c.expeditor_id == expeditor_id)
     return await database.fetch_all(query)
 
 # API: Создать задачу

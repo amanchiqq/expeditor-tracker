@@ -1,0 +1,241 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expeditor Tracker - Astana (2GIS)</title>
+    <!-- 2GIS MapGL -->
+    <script src="https://mapgl.2gis.com/api/js/v1"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
+    <style>
+        #map { height: 400px; }
+        body { font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="container mx-auto">
+        <h1 class="text-2xl font-bold mb-4">Expeditor Tracker - Astana</h1>
+
+        <!-- Map Section -->
+        <div class="mb-6">
+            <h2 class="text-xl font-semibold mb-2">Map of Astana</h2>
+            <div id="map" class="rounded shadow"></div>
+        </div>
+
+        <!-- Task Form and Filter -->
+        <div class="mb-6 bg-white p-4 rounded shadow">
+            <h2 class="text-xl font-semibold mb-2">Add New Task</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <input id="expeditor_id" type="number" placeholder="Expeditor ID" class="border p-2 rounded">
+                <input id="description" type="text" placeholder="Description" class="border p-2 rounded">
+                <input id="latitude" type="number" step="any" placeholder="Latitude (e.g., 51.16)" class="border p-2 rounded">
+                <input id="longitude" type="number" step="any" placeholder="Longitude (e.g., 71.47)" class="border p-2 rounded">
+            </div>
+            <button onclick="addTask()" class="mt-4 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Add Task</button>
+            <div class="mt-4">
+                <label for="expeditor_filter" class="font-semibold">Filter by Expeditor ID:</label>
+                <input id="expeditor_filter" type="number" placeholder="Enter Expeditor ID" class="border p-2 rounded">
+                <button onclick="fetchTasks()" class="ml-2 bg-green-500 text-white p-2 rounded hover:bg-green-600">Apply Filter</button>
+            </div>
+        </div>
+
+        <!-- Task List -->
+        <div class="mb-6">
+            <h2 class="text-xl font-semibold mb-2">Tasks</h2>
+            <table class="w-full bg-white rounded shadow">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="p-2">ID</th>
+                        <th class="p-2">Expeditor ID</th>
+                        <th class="p-2">Description</th>
+                        <th class="p-2">Latitude</th>
+                        <th class="p-2">Longitude</th>
+                        <th class="p-2">Created At</th>
+                    </tr>
+                </thead>
+                <tbody id="taskList"></tbody>
+            </table>
+        </div>
+
+        <!-- Chart Section -->
+        <div>
+            <h2 class="text-xl font-semibold mb-2">Tasks by Expeditor</h2>
+            <canvas id="taskChart" class="bg-white rounded shadow"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // Initialize 2GIS Map (Astana)
+        const map = new mapgl.Map('map', {
+            center: [71.47, 51.16], // Astana center (lon, lat)
+            zoom: 12,
+            key: '0fc41365-bc9e-41ec-937e-88e6d9ff3f54' // Replace with your API key
+        });
+
+        let markers = [];
+
+        // Initialize Socket.IO
+        const socket = io('http://localhost:8000', { path: '/socket.io' });
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket');
+        });
+        socket.on('location_update', (data) => {
+            console.log('Location update:', data);
+            updateMapMarker(data);
+            fetchTasks();
+        });
+        socket.on('connect_error', (err) => {
+            console.error('WebSocket error:', err);
+        });
+
+        // Update Map Marker
+        function updateMapMarker(data) {
+            const existing = markers.find(m => m.task_id === data.task_id);
+            if (existing) {
+                existing.marker.setCoordinates([data.longitude, data.latitude]);
+            } else {
+                const marker = new mapgl.Marker(map, {
+                    coordinates: [data.longitude, data.latitude],
+                    label: `Task ${data.task_id}: ${data.description || 'Updated'}`
+                });
+                markers.push({ task_id: data.task_id, marker });
+            }
+        }
+
+        // Fetch Tasks
+        async function fetchTasks() {
+            try {
+                const filter = document.getElementById('expeditor_filter').value;
+                const url = filter ? `http://localhost:8000/tasks?expeditor_id=${filter}` : 'http://localhost:8000/tasks';
+                const response = await fetch(url);
+                const tasks = await response.json();
+
+                // Update Map
+                markers.forEach(m => m.marker.destroy());
+                markers = [];
+                tasks.forEach(task => {
+                    const marker = new mapgl.Marker(map, {
+                        coordinates: [task.longitude, task.latitude],
+                        label: `Task ${task.id}: ${task.description}`
+                    });
+                    markers.push({ task_id: task.id, marker });
+                });
+
+                // Update Task List
+                const taskList = document.getElementById('taskList');
+                taskList.innerHTML = '';
+                tasks.forEach(task => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="p-2">${task.id}</td>
+                        <td class="p-2">${task.expeditor_id}</td>
+                        <td class="p-2">${task.description}</td>
+                        <td class="p-2">${task.latitude}</td>
+                        <td class="p-2">${task.longitude}</td>
+                        <td class="p-2">${task.created_at}</td>
+                    `;
+                    taskList.appendChild(row);
+                });
+
+                // Update Chart
+                const expCounts = {};
+                tasks.forEach(task => {
+                    expCounts[task.expeditor_id] = (expCounts[task.expeditor_id] || 0) + 1;
+                });
+
+                const ctx = document.getElementById('taskChart').getContext('2d');
+                if (window.taskChart) window.taskChart.destroy();
+                window.taskChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(expCounts),
+                        datasets: [{
+                            label: 'Tasks per Expeditor',
+                            data: Object.values(expCounts),
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: { beginAtZero: true, title: { display: true, text: 'Number of Tasks' } },
+                            x: { title: { display: true, text: 'Expeditor ID' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error fetching tasks:', error);
+            }
+        }
+
+        // Add New Task
+        async function addTask() {
+            const task = {
+                expeditor_id: parseInt(document.getElementById('expeditor_id').value),
+                description: document.getElementById('description').value,
+                latitude: parseFloat(document.getElementById('latitude').value),
+                longitude: parseFloat(document.getElementById('longitude').value)
+            };
+
+            try {
+                await fetch('http://localhost:8000/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(task)
+                });
+                fetchTasks();
+            } catch (error) {
+                console.error('Error adding task:', error);
+            }
+        }
+
+        // Initial Fetch
+        fetchTasks();
+    </script>
+</body>
+</html>
