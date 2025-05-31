@@ -66,7 +66,7 @@
             <div id="map" class="rounded shadow"></div>
         </div>
 
-        <!-- Task Form and Filter -->
+        <!-- Task Form, Filter, and Geocoding -->
         <div class="mb-6 bg-white p-4 rounded shadow">
             <h2 class="text-xl font-semibold mb-2">Add New Task</h2>
             <div class="grid grid-cols-2 gap-4">
@@ -74,6 +74,10 @@
                 <input id="description" type="text" placeholder="Description" class="border p-2 rounded">
                 <input id="latitude" type="number" step="any" placeholder="Latitude (e.g., 51.16)" class="border p-2 rounded">
                 <input id="longitude" type="number" step="any" placeholder="Longitude (e.g., 71.47)" class="border p-2 rounded">
+            </div>
+            <div class="mt-4">
+                <input id="address" type="text" placeholder="Enter address in Astana (e.g., Мангилик Ел)" class="border p-2 rounded w-full">
+                <button onclick="geocodeAddress()" class="mt-2 bg-purple-500 text-white p-2 rounded hover:bg-purple-600">Find Coordinates</button>
             </div>
             <button onclick="addTask()" class="mt-4 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Add Task</button>
             <div class="mt-4">
@@ -119,7 +123,7 @@
         let markers = [];
 
         // Initialize Socket.IO
-        const socket = io('http://localhost:8000', { path: '/socket.io' });
+        const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'] });
         socket.on('connect', () => {
             console.log('Connected to WebSocket');
         });
@@ -186,10 +190,7 @@
                 tasks.forEach(task => {
                     expCounts[task.expeditor_id] = (expCounts[task.expeditor_id] || 0) + 1;
                 });
-
-                const ctx = document.getElementById('taskChart').getContext('2d');
-                if (window.taskChart) window.taskChart.destroy();
-                window.taskChart = new Chart(ctx, {
+                const chart = {
                     type: 'bar',
                     data: {
                         labels: Object.keys(expCounts),
@@ -207,7 +208,10 @@
                             x: { title: { display: true, text: 'Expeditor ID' } }
                         }
                     }
-                });
+                };
+                const ctx = document.getElementById('taskChart').getContext('2d');
+                if (window.taskChart) window.taskChart.destroy();
+                window.taskChart = new Chart(ctx, chart);
             } catch (error) {
                 console.error('Error fetching tasks:', error);
             }
@@ -231,6 +235,27 @@
                 fetchTasks();
             } catch (error) {
                 console.error('Error adding task:', error);
+            }
+        }
+
+        // Geocode Address (2GIS API)
+        async function geocodeAddress() {
+            const address = document.getElementById('address').value;
+            if (!address) return alert('Enter an address');
+            try {
+                const response = await fetch(`https://catalog.api.2gis.com/3.0/items/geocode?q=${encodeURIComponent(address)}&fields=items.point&key=YOUR_2GIS_API_KEY`);
+                const data = await response.json();
+                if (data.result.items.length > 0) {
+                    const point = data.result.items[0].point;
+                    document.getElementById('latitude').value = point.lat;
+                    document.getElementById('longitude').value = point.lon;
+                    map.setCenter([point.lon, point.lat]);
+                } else {
+                    alert('Address not found');
+                }
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                alert('Error finding address');
             }
         }
 

@@ -1,16 +1,28 @@
-from fastapi import FastAPI, WebSocket, Query
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from databases import Database
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, DateTime
-import socketio
 from datetime import datetime
-import json
-    
-# Конфигурация базы данных
+import socketio
+
+# FastAPI app
+app = FastAPI()
+
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for testing
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Database configuration
 DATABASE_URL = "postgresql://localhost/expeditor_db"
 database = Database(DATABASE_URL)
 metadata = MetaData()
 
-# Определение таблицы задач
+# Define tasks table
 tasks = Table(
     "tasks",
     metadata,
@@ -22,16 +34,11 @@ tasks = Table(
     Column("created_at", DateTime, default=datetime.utcnow),
 )
 
-# Инициализация FastAPI и Socket.IO
-app = FastAPI()
+# Socket.IO server
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 app.mount("/socket.io", socketio.ASGIApp(sio))
 
-# Создание таблиц
-engine = create_engine(DATABASE_URL)
-metadata.create_all(engine)
-
-# Подключение к базе данных
+# Database connection
 @app.on_event("startup")
 async def startup():
     await database.connect()
@@ -40,7 +47,7 @@ async def startup():
 async def shutdown():
     await database.disconnect()
 
-# API: Получить все задачи
+# API endpoints
 @app.get("/tasks")
 async def get_tasks(expeditor_id: int = Query(None)):
     query = tasks.select()
@@ -48,7 +55,6 @@ async def get_tasks(expeditor_id: int = Query(None)):
         query = query.where(tasks.c.expeditor_id == expeditor_id)
     return await database.fetch_all(query)
 
-# API: Создать задачу
 @app.post("/tasks")
 async def create_task(task: dict):
     query = tasks.insert().values(
@@ -56,15 +62,26 @@ async def create_task(task: dict):
         description=task["description"],
         latitude=task["latitude"],
         longitude=task["longitude"],
+        created_at=datetime.utcnow(),
     )
-    last_id = await database.execute(query)
-    return {"id": last_id, **task}
+    last_record_id = await database.execute(query)
+    return {**task, "id": last_record_id}
 
-# WebSocket: Обновление геолокации
+# WebSocket handler
 @sio.event
+async def connect(sid, environ):
+    print(f"Client connected: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    print(f"Client disconnected: {sid}")
+
+@sio.on("location_update")
 async def location_update(sid, data):
+    print(f"Location update received: {data}")
     query = tasks.update().where(tasks.c.id == data["task_id"]).values(
-        latitude=data["latitude"], longitude=data["longitude"]
+        latitude=data["latitude"],
+        longitude=data["longitude"]
     )
     await database.execute(query)
-    await sio.emit("location_update", data)  # Отправка обновления всем клиентам
+    await sio.emit("location_update", data)  # Broadcast to all clients
