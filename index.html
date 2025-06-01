@@ -15,6 +15,7 @@
         #suggestions { position: absolute; background: white; border: 1px solid #ccc; z-index: 1000; }
         .suggestion { padding: 8px; cursor: pointer; }
         .suggestion:hover { background: #f0f0f0; }
+        .mapgl-label { background: white; border: 1px solid #333; padding: 5px; border-radius: 3px; font-size: 12px; z-index: 2; }
     </style>
 </head>
 <body class="bg-gray-100 p-4">
@@ -27,7 +28,7 @@
         <div class="mb-6 bg-white p-4 rounded shadow">
             <h2 class="text-xl font-semibold mb-2">Add New Task</h2>
             <div class="grid grid-cols-2 gap-4">
-                <input id="expeditor_id" type="number" placeholder="Expeditor ID" class="border p-2 rounded">
+                <input id="expeditor_id" type="number" placeholder="Expeditor ID" class="border p-2 rounded" required>
                 <input id="description" type="text" placeholder="Description" class="border p-2 rounded">
                 <input id="latitude" type="number" step="any" placeholder="Latitude (e.g., 51.16)" class="border p-2 rounded">
                 <input id="longitude" type="number" step="any" placeholder="Longitude (e.g., 71.47)" class="border p-2 rounded">
@@ -81,7 +82,9 @@
         }
 
         let markers = [];
+        let labels = [];
         let geocodeMarker = null;
+        let geocodeLabel = null;
 
         const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'] });
         socket.on('connect', () => console.log('Connected to WebSocket'));
@@ -97,19 +100,32 @@
             const existing = markers.find(m => m.task_id === data.task_id);
             if (existing) {
                 existing.marker.setCoordinates([data.longitude, data.latitude]);
+                const label = labels.find(l => l.task_id === data.task_id);
+                if (label) {
+                    label.label.setCoordinates([data.longitude, data.latitude]);
+                }
             } else if (map) {
                 try {
                     const marker = new mapgl.Marker(map, {
                         coordinates: [data.longitude, data.latitude]
                     });
+                    const label = new mapgl.Label(map, {
+                        coordinates: [data.longitude, data.latitude],
+                        text: `Task ${data.task_id}`,
+                        offset: [0, -20]
+                    });
                     marker.on('click', () => {
-                        new mapgl.Popup()
-                            .setLngLat([data.longitude, data.latitude])
-                            .setHTML(`<b>Task ${data.task_id}</b><br>Location Update`)
-                            .addTo(map);
+                        const tempLabel = new mapgl.Label(map, {
+                            coordinates: [data.longitude, data.latitude],
+                            text: `Task ${data.task_id}: Location Update`,
+                            offset: [0, -40]
+                        });
+                        console.log('Temp label added for task:', data.task_id);
+                        setTimeout(() => tempLabel.destroy(), 3000);
                     });
                     markers.push({ task_id: data.task_id, marker });
-                    console.log('Marker added:', data.task_id);
+                    labels.push({ task_id: data.task_id, label });
+                    console.log('Marker and label added:', data.task_id);
                 } catch (e) {
                     console.error('Error adding marker:', e);
                 }
@@ -128,29 +144,41 @@
                 console.log('Tasks received:', tasksRaw);
 
                 const tasks = tasksRaw.map(task => JSON.parse(JSON.stringify(task)));
-                const astanaTasks = tasks.filter(task => 
-                    task.latitude >= 51 && task.latitude <= 52 &&
-                    task.longitude >= 71 && task.longitude <= 72
-                );
+                const astanaTasks = tasks.filter(task => {
+                    const inAstana = task.latitude >= 51 && task.latitude <= 52 && task.longitude >= 71 && task.longitude <= 72;
+                    console.log(`Task ${task.id}: [${task.latitude}, ${task.longitude}] inAstana: ${inAstana}`);
+                    return inAstana;
+                });
                 console.log('Astana tasks:', astanaTasks);
 
                 if (map) {
                     console.log('Map status:', map.getCenter(), map.getZoom());
                     markers.forEach(m => m.marker.destroy());
+                    labels.forEach(l => l.label.destroy());
                     markers = [];
-                    astanaTasks.forEach(task => {
+                    labels = [];
+                    astanaTasks.forEach((task, index) => {
                         console.log('Adding marker:', task.id, [task.longitude, task.latitude]);
                         try {
                             const marker = new mapgl.Marker(map, {
                                 coordinates: [task.longitude, task.latitude]
                             });
+                            const label = new mapgl.Label(map, {
+                                coordinates: [task.longitude, task.latitude],
+                                text: `Task ${task.id}: ${task.description}`,
+                                offset: [0, -20 - (index % 3) * 10]
+                            });
                             marker.on('click', () => {
-                                new mapgl.Popup()
-                                    .setLngLat([task.longitude, task.latitude])
-                                    .setHTML(`<b>Task ${task.id}</b><br>${task.description}`)
-                                    .addTo(map);
+                                const tempLabel = new mapgl.Label(map, {
+                                    coordinates: [task.longitude, task.latitude],
+                                    text: `Task ${task.id}: ${task.description}`,
+                                    offset: [0, -40 - (index % 3) * 10]
+                                });
+                                console.log('Temp label added for task:', task.id);
+                                setTimeout(() => tempLabel.destroy(), 3000);
                             });
                             markers.push({ task_id: task.id, marker });
+                            labels.push({ task_id: task.id, label });
                         } catch (e) {
                             console.error('Error adding marker:', task.id, e);
                         }
@@ -186,7 +214,7 @@
                         data: {
                             labels: Object.keys(expCounts),
                             datasets: [{
-                                label: 'Tasks per Expeditor',
+                                label: 'Tasks',
                                 data: Object.values(expCounts),
                                 backgroundColor: ['rgba(54, 162, 235, 0.5)', 'rgba(255, 99, 132, 0.5)', 'rgba(75, 192, 192, 0.5)'],
                                 borderColor: ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)', 'rgba(75, 192, 192, 1)'],
@@ -244,15 +272,24 @@
                                 if (map) {
                                     map.setCenter([item.point.lon, item.point.lat]);
                                     if (geocodeMarker) geocodeMarker.destroy();
+                                    if (geocodeLabel) geocodeLabel.destroy();
                                     try {
                                         geocodeMarker = new mapgl.Marker(map, {
                                             coordinates: [item.point.lon, item.point.lat]
                                         });
+                                        geocodeLabel = new mapgl.Label(map, {
+                                            coordinates: [item.point.lon, item.point.lat],
+                                            text: item.address_name || item.name,
+                                            offset: [0, -20]
+                                        });
                                         geocodeMarker.on('click', () => {
-                                            new mapgl.Popup()
-                                                .setLngLat([item.point.lon, item.point.lat])
-                                                .setHTML(`<b>Address</b><br>${item.address_name || item.name}`)
-                                                .addTo(map);
+                                            const tempLabel = new mapgl.Label(map, {
+                                                coordinates: [item.point.lon, item.point.lat],
+                                                text: item.address_name || item.name,
+                                                offset: [0, -40]
+                                            });
+                                            console.log('Temp label added for geocode');
+                                            setTimeout(() => tempLabel.destroy(), 3000);
                                         });
                                         console.log('Geocode marker added:', item.point);
                                     } catch (e) {
@@ -281,12 +318,18 @@
         }
 
         async function addTask() {
+            const expeditorIdInput = document.getElementById('expeditor_id').value;
+            const expeditor_id = expeditorIdInput ? parseInt(expeditorIdInput) : 0; // Дефолт 0 если пусто
             const task = {
-                expeditor_id: parseInt(document.getElementById('expeditor_id').value),
+                expeditor_id: expeditor_id,
                 description: document.getElementById('description').value,
                 latitude: parseFloat(document.getElementById('latitude').value),
                 longitude: parseFloat(document.getElementById('longitude').value)
             };
+            if (!task.expeditor_id && task.expeditor_id !== 0) {
+                alert('Expeditor ID is required');
+                return;
+            }
             console.log('Adding task:', task);
             try {
                 const response = await fetch('http://localhost:8000/tasks', {

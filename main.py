@@ -1,73 +1,93 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from databases import Database
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, DateTime
-from datetime import datetime
 import socketio
+import asyncpg
+from pydantic import BaseModel
+import uvicorn
+from contextlib import asynccontextmanager
 
-# FastAPI app
+# Инициализация FastAPI
 app = FastAPI()
 
-# CORS Middleware
+# Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for testing
+    allow_origins=["http://localhost:8080"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Database configuration
-DATABASE_URL = "postgresql://localhost/expeditor_db"
-database = Database(DATABASE_URL)
-metadata = MetaData()
+# Инициализация Socket.IO
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=["http://localhost:8080"])
+sio_app = socketio.ASGIApp(sio)
 
-# Define tasks table
-tasks = Table(
-    "tasks",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("expeditor_id", Integer),
-    Column("description", String),
-    Column("latitude", Float),
-    Column("longitude", Float),
-    Column("created_at", DateTime, default=datetime.utcnow),
-)
+# Монтируем Socket.IO на FastAPI
+app.mount("/socket.io", sio_app)
 
-# Socket.IO server
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
-app.mount("/socket.io", socketio.ASGIApp(sio))
+# Lifespan для управления подключением Socket.IO
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    # Здесь можно добавить очистку, если нужно
 
-# Database connection
-@app.on_event("startup")
-async def startup():
-    await database.connect()
+app.router.lifespan_context = lifespan
 
-@app.on_event("shutdown")
-async def shutdown():
-    await database.disconnect()
+# Модель задачи
+class Task(BaseModel):
+    expeditor_id: int
+    description: str
+    latitude: float
+    longitude: float
 
-# API endpoints
+# Подключение к базе
+async def get_db_connection():
+    try:
+        conn = await asyncpg.connect(
+            user='aman',  # Замени на твоего пользователя PostgreSQL
+            password='5566',  # Замени на актуальный пароль
+            database='expeditor_db',
+            host='localhost'
+        )
+        return conn
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database connection error: {str(e)}")
+
+# Получение всех задач
 @app.get("/tasks")
-async def get_tasks(expeditor_id: int = Query(None)):
-    query = tasks.select()
-    if expeditor_id is not None:
-        query = query.where(tasks.c.expeditor_id == expeditor_id)
-    return await database.fetch_all(query)
+async def get_tasks(expeditor_id: int = None):
+    conn = await get_db_connection()
+    try:
+        if expeditor_id is not None:
+            tasks = await conn.fetch("SELECT * FROM tasks WHERE expeditor_id = $1", expeditor_id)
+        else:
+            tasks = await conn.fetch("SELECT * FROM tasks")
+        return [dict(task) for task in tasks]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching tasks: {str(e)}")
+    finally:
+        await conn.close()
 
+# Добавление задачи
 @app.post("/tasks")
-async def create_task(task: dict):
-    query = tasks.insert().values(
-        expeditor_id=task["expeditor_id"],
-        description=task["description"],
-        latitude=task["latitude"],
-        longitude=task["longitude"],
-        created_at=datetime.utcnow(),
-    )
-    last_record_id = await database.execute(query)
-    return {**task, "id": last_record_id}
+async def add_task(task: Task):
+    conn = await get_db_connection()
+    try:
+        query = """
+            INSERT INTO tasks (expeditor_id, description, latitude, longitude)
+            VALUES ($1, $2, $3, $4)
+            RETURNING *
+        """
+        result = await conn.fetchrow(query, task.expeditor_id, task.description, task.latitude, task.longitude)
+        new_task = dict(result)
+        await sio.emit("location_update", {"task_id": new_task["id"], "latitude": new_task["latitude"], "longitude": new_task["longitude"]})
+        return new_task
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding task: {str(e)}")
+    finally:
+        await conn.close()
 
-# WebSocket handler
+# Обработчик подключения Socket.IO
 @sio.event
 async def connect(sid, environ):
     print(f"Client connected: {sid}")
@@ -76,12 +96,6 @@ async def connect(sid, environ):
 async def disconnect(sid):
     print(f"Client disconnected: {sid}")
 
-@sio.on("location_update")
-async def location_update(sid, data):
-    print(f"Location update received: {data}")
-    query = tasks.update().where(tasks.c.id == data["task_id"]).values(
-        latitude=data["latitude"],
-        longitude=data["longitude"]
-    )
-    await database.execute(query)
-    await sio.emit("location_update", data)  # Broadcast to all clients
+# Запуск сервера
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
