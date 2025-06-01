@@ -81,6 +81,7 @@
         }
 
         let markers = [];
+        let geocodeMarker = null;
 
         const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'] });
         socket.on('connect', () => console.log('Connected to WebSocket'));
@@ -100,6 +101,12 @@
                 try {
                     const marker = new mapgl.Marker(map, {
                         coordinates: [data.longitude, data.latitude]
+                    });
+                    marker.on('click', () => {
+                        new mapgl.Popup()
+                            .setLngLat([data.longitude, data.latitude])
+                            .setHTML(`<b>Task ${data.task_id}</b><br>Location Update`)
+                            .addTo(map);
                     });
                     markers.push({ task_id: data.task_id, marker });
                     console.log('Marker added:', data.task_id);
@@ -128,6 +135,7 @@
                 console.log('Astana tasks:', astanaTasks);
 
                 if (map) {
+                    console.log('Map status:', map.getCenter(), map.getZoom());
                     markers.forEach(m => m.marker.destroy());
                     markers = [];
                     astanaTasks.forEach(task => {
@@ -135,6 +143,12 @@
                         try {
                             const marker = new mapgl.Marker(map, {
                                 coordinates: [task.longitude, task.latitude]
+                            });
+                            marker.on('click', () => {
+                                new mapgl.Popup()
+                                    .setLngLat([task.longitude, task.latitude])
+                                    .setHTML(`<b>Task ${task.id}</b><br>${task.description}`)
+                                    .addTo(map);
                             });
                             markers.push({ task_id: task.id, marker });
                         } catch (e) {
@@ -161,33 +175,40 @@
                     taskList.appendChild(row);
                 });
 
-                const expCounts = {};
-                tasks.forEach(task => {
-                    expCounts[task.expeditor_id] = (expCounts[task.expeditor_id] || 0) + 1;
-                });
-                const chart = {
-                    type: 'bar',
-                    data: {
-                        labels: Object.keys(expCounts),
-                        datasets: [{
-                            label: 'Tasks per Expeditor',
-                            data: Object.values(expCounts),
-                            backgroundColor: ['rgba(54, 162, 235, 0.5)', 'rgba(255, 99, 132, 0.5)', 'rgba(75, 192, 192, 0.5)'],
-                            borderColor: ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)', 'rgba(75, 192, 192, 1)'],
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        plugins: { legend: { display: true, position: 'top' } },
-                        scales: {
-                            y: { beginAtZero: true, title: { display: true, text: 'Number of Tasks' } },
-                            x: { title: { display: true, text: 'Expeditor ID' } }
+                try {
+                    const expCounts = {};
+                    tasks.forEach(task => {
+                        expCounts[task.expeditor_id] = (expCounts[task.expeditor_id] || 0) + 1;
+                    });
+                    console.log('Chart data:', expCounts);
+                    const chart = {
+                        type: 'bar',
+                        data: {
+                            labels: Object.keys(expCounts),
+                            datasets: [{
+                                label: 'Tasks per Expeditor',
+                                data: Object.values(expCounts),
+                                backgroundColor: ['rgba(54, 162, 235, 0.5)', 'rgba(255, 99, 132, 0.5)', 'rgba(75, 192, 192, 0.5)'],
+                                borderColor: ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)', 'rgba(75, 192, 192, 1)'],
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            plugins: { legend: { display: true, position: 'top' } },
+                            scales: {
+                                y: { beginAtZero: true, title: { display: true, text: 'Number of Tasks' } },
+                                x: { title: { display: true, text: 'Expeditor ID' } }
+                            }
                         }
+                    };
+                    const ctx = document.getElementById('taskChart').getContext('2d');
+                    if (window.taskChart && typeof window.taskChart.destroy === 'function') {
+                        window.taskChart.destroy();
                     }
-                };
-                const ctx = document.getElementById('taskChart').getContext('2d');
-                if (window.taskChart) window.taskChart.destroy();
-                window.taskChart = new Chart(ctx, chart);
+                    window.taskChart = new Chart(ctx, chart);
+                } catch (e) {
+                    console.error('Error creating chart:', e);
+                }
             } catch (error) {
                 console.error('Error fetching tasks:', error);
             }
@@ -202,9 +223,11 @@
             }
             try {
                 const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`Астана, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=0fc41365-bc9e-41ec-937e-88e6d9ff3f54`;
+                console.log('Suggest URL:', url);
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`Suggest HTTP error ${response.status}`);
                 const data = await response.json();
+                console.log('Suggest response:', data);
                 suggestionsDiv.innerHTML = '';
                 if (data.result && data.result.items.length > 0) {
                     data.result.items.forEach(item => {
@@ -218,7 +241,24 @@
                                 document.getElementById('latitude').value = item.point.lat;
                                 document.getElementById('longitude').value = item.point.lon;
                                 document.getElementById('description').value = item.address_name || item.name;
-                                if (map) map.setCenter([item.point.lon, item.point.lat]);
+                                if (map) {
+                                    map.setCenter([item.point.lon, item.point.lat]);
+                                    if (geocodeMarker) geocodeMarker.destroy();
+                                    try {
+                                        geocodeMarker = new mapgl.Marker(map, {
+                                            coordinates: [item.point.lon, item.point.lat]
+                                        });
+                                        geocodeMarker.on('click', () => {
+                                            new mapgl.Popup()
+                                                .setLngLat([item.point.lon, item.point.lat])
+                                                .setHTML(`<b>Address</b><br>${item.address_name || item.name}`)
+                                                .addTo(map);
+                                        });
+                                        console.log('Geocode marker added:', item.point);
+                                    } catch (e) {
+                                        console.error('Error adding geocode marker:', e);
+                                    }
+                                }
                                 console.log('Suggested coordinates:', item.point);
                             }
                         };
@@ -248,7 +288,6 @@
                 longitude: parseFloat(document.getElementById('longitude').value)
             };
             console.log('Adding task:', task);
-
             try {
                 const response = await fetch('http://localhost:8000/tasks', {
                     method: 'POST',
