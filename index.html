@@ -1,48 +1,11 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Expeditor Tracker - Astana (2GIS)</title>
+    <!-- Favicon fix -->
+    <link rel="icon" href="data:,">
     <!-- 2GIS MapGL -->
     <script src="https://mapgl.2gis.com/api/js/v1"></script>
     <!-- Tailwind CSS -->
@@ -51,11 +14,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <!-- Socket.IO -->
     <script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
-    <!-- 2GIS Clusterer -->
-    <script src="https://unpkg.com/@2gis/mapgl-clusterer@2/dist/index.js"></script>
     <style>
         #map { height: 400px; }
         body { font-family: Arial, sans-serif; }
+        #suggestions { position: absolute; background: white; border: 1px solid #ccc; z-index: 1000; }
+        .suggestion { padding: 8px; cursor: pointer; }
+        .suggestion:hover { background: #f0f0f0; }
     </style>
 </head>
 <body class="bg-gray-100 p-4">
@@ -77,8 +41,9 @@
                 <input id="latitude" type="number" step="any" placeholder="Latitude (e.g., 51.16)" class="border p-2 rounded">
                 <input id="longitude" type="number" step="any" placeholder="Longitude (e.g., 71.47)" class="border p-2 rounded">
             </div>
-            <div class="mt-4">
-                <input id="address" type="text" placeholder="Enter address in Astana (e.g., Кабанбай Батыра, 8)" class="border p-2 rounded w-full">
+            <div class="mt-4 relative">
+                <input id="address" type="text" placeholder="Enter address in Astana (e.g., проспект Кабанбай Батыра, 8)" class="border p-2 rounded w-full" oninput="suggestAddress()">
+                <div id="suggestions" class="hidden"></div>
                 <button onclick="geocodeAddress()" class="mt-2 bg-purple-500 text-white p-2 rounded hover:bg-purple-600">Find Coordinates</button>
             </div>
             <button onclick="addTask()" class="mt-4 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Add Task</button>
@@ -121,7 +86,7 @@
             map = new mapgl.Map('map', {
                 center: [71.47, 51.16], // Astana center (lon, lat)
                 zoom: 12,
-                key: '0fc41365-bc9e-41ec-937e-88e6d9ff3f54' // Replace with your API key
+                key: '0fc41365-bc9e-41ec-937e-88e6d9ff3f54'
             });
             console.log('Map initialized successfully');
             map.on('styleload', () => console.log('Map style loaded'));
@@ -130,7 +95,6 @@
         }
 
         let markers = [];
-        let clusterer;
 
         // Initialize Socket.IO
         const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'] });
@@ -152,11 +116,11 @@
                 const marker = new mapgl.Marker(map, {
                     coordinates: [data.longitude, data.latitude],
                     label: `Task ${data.task_id}: ${data.description || 'Updated'}`,
-                    icon: 'https://docs.2gis.com/img/mapgl/marker.svg?color=red'
+                    icon: './marker.svg'
                 });
                 markers.push({ task_id: data.task_id, marker });
             }
-            updateClusters();
+            console.log('Markers updated:', markers.length);
         }
 
         // Fetch Tasks
@@ -173,11 +137,26 @@
                 // Clone tasks to avoid readonly issues
                 const tasks = tasksRaw.map(task => ({ ...task }));
 
+                // Filter tasks for Astana (lat: 51.x, lon: 71.x)
+                const astanaTasks = tasks.filter(task => 
+                    task.latitude >= 51 && task.latitude <= 52 &&
+                    task.longitude >= 71 && task.longitude <= 72
+                );
+                console.log('Astana tasks:', astanaTasks.length);
+
                 // Update Map
                 if (map) {
                     markers.forEach(m => m.marker.destroy());
                     markers = [];
-                    updateClusters(tasks);
+                    astanaTasks.forEach(task => {
+                        const marker = new mapgl.Marker(map, {
+                            coordinates: [task.longitude, task.latitude],
+                            label: `Task ${task.id}: ${task.description}`,
+                            icon: './marker.svg'
+                        });
+                        markers.push({ task_id: task.id, marker });
+                    });
+                    console.log('Markers updated:', markers.length);
                 } else {
                     console.error('Map not initialized, cannot add markers');
                 }
@@ -216,6 +195,7 @@
                         }]
                     },
                     options: {
+                        plugins: { legend: { display: true, position: 'top' } },
                         scales: {
                             y: { beginAtZero: true, title: { display: true, text: 'Number of Tasks' } },
                             x: { title: { display: true, text: 'Expeditor ID' } }
@@ -230,49 +210,46 @@
             }
         }
 
-        // Update Clusters
-        function updateClusters(tasks = []) {
-            if (!map) return;
-            if (clusterer) clusterer.destroy();
-            clusterer = new mapgl.Clusterer(map, { radius: 60 });
-            const clusterData = tasks.map(task => ({
-                coordinates: [task.longitude, task.latitude],
-                id: task.id,
-                label: `Task ${task.id}: ${task.description}`
-            }));
-            clusterer.load(clusterData);
-            console.log('Clusters updated:', clusterData.length);
-        }
-
-        // Add New Task
-        async function addTask() {
-            const task = {
-                expeditor_id: parseInt(document.getElementById('expeditor_id').value),
-                description: document.getElementById('description').value,
-                latitude: parseFloat(document.getElementById('latitude').value),
-                longitude: parseFloat(document.getElementById('longitude').value)
-            };
-            console.log('Adding task:', task);
-
+        // Suggest Address
+        async function suggestAddress() {
+            const address = document.getElementById('address').value;
+            const suggestionsDiv = document.getElementById('suggestions');
+            if (!address || address.length < 3) {
+                suggestionsDiv.classList.add('hidden');
+                return;
+            }
             try {
-                const response = await fetch('http://localhost:8000/tasks', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(task)
-                });
-                if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-                console.log('Task added successfully');
-                fetchTasks();
+                const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`Астана, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=0fc41365-bc9e-41ec-937e-88e6d9ff3f54`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Suggest HTTP error ${response.status}`);
+                const data = await response.json();
+                suggestionsDiv.innerHTML = '';
+                if (data.result && data.result.items.length > 0) {
+                    data.result.items.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'suggestion';
+                        div.textContent = item.address_name || item.name;
+                        div.onclick = () => {
+                            document.getElementById('address').value = item.address_name || item.name;
+                            suggestionsDiv.classList.add('hidden');
+                            geocodeAddress();
+                        };
+                        suggestionsDiv.appendChild(div);
+                    });
+                    suggestionsDiv.classList.remove('hidden');
+                } else {
+                    suggestionsDiv.classList.add('hidden');
+                }
             } catch (error) {
-                console.error('Error adding task:', error);
+                console.error('Suggest error:', error);
+                suggestionsDiv.classList.add('hidden');
             }
         }
 
-        // Geocode Address (2GIS API)
+        // Geocode Address
         async function geocodeAddress() {
             const address = document.getElementById('address').value;
             if (!address) return alert('Enter an address');
-            // Add city for accuracy
             const fullAddress = `Астана, ${address}`;
             console.log('Geocoding address:', fullAddress);
             try {
@@ -282,6 +259,9 @@
                 if (!response.ok) {
                     if (response.status === 403) {
                         throw new Error('Authorization error: Ensure API key supports Geocoding API. Check https://dev.2gis.com.');
+                    }
+                    if (response.status === 404) {
+                        throw new Error('Address not found. Try "проспект Кабанбай Батыр, 8" or check 2GIS support.');
                     }
                     throw new Error(`Geocoding HTTP error ${response.status}`);
                 }
@@ -296,7 +276,7 @@
                     if (map) map.setCenter([point.lon, point.lat]);
                     console.log('Geocoded coordinates:', point);
                 } else {
-                    alert('Address not found in Astana');
+                    alert('Address not found in Astana. Try "проспект Кабанбай Батыр, 8".');
                     console.log('No geocoding results');
                 }
             } catch (error) {
