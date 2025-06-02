@@ -15,7 +15,16 @@
         #suggestions { position: absolute; background: white; border: 1px solid #ccc; z-index: 1000; }
         .suggestion { padding: 8px; cursor: pointer; }
         .suggestion:hover { background: #f0f0f0; }
-        .mapgl-label { background: white; border: 1px solid #333; padding: 5px; border-radius: 3px; font-size: 12px; z-index: 2; }
+        .mapgl-label { 
+            background: rgba(255, 255, 255, 0.9); 
+            border: 1px solid #333; 
+            padding: 5px; 
+            border-radius: 5px; 
+            font-size: 12px; 
+            z-index: 2; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
+            white-space: nowrap; 
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-4">
@@ -24,6 +33,8 @@
         <div class="mb-6">
             <h2 class="text-xl font-semibold mb-2">Map of Astana</h2>
             <div id="map" class="rounded shadow"></div>
+            <button onclick="clearMap()" class="mt-2 bg-red-500 text-white p-2 rounded hover:bg-red-600">Clear Map</button>
+            <button onclick="fetchTasks()" class="mt-2 ml-2 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Refresh Data</button>
         </div>
         <div class="mb-6 bg-white p-4 rounded shadow">
             <h2 class="text-xl font-semibold mb-2">Add New Task</h2>
@@ -34,8 +45,7 @@
                 <input id="longitude" type="number" step="any" placeholder="Longitude (e.g., 71.47)" class="border p-2 rounded">
             </div>
             <div class="mt-4 relative">
-                <input id="address" type="text" placeholder="Enter address in Astana (e.g., проспект Кабанбай Батыра, 8)" class="border p-2 rounded w-full" oninput="suggestAddress()">
-                <div id="suggestions" class="hidden"></div>
+                <input id="address" type="text" placeholder="Enter address in Astana (e.g., проспект Кабанбай Батыра, 8)" class="border p-2 rounded w-full">
                 <button onclick="geocodeAddress()" class="mt-2 bg-purple-500 text-white p-2 rounded hover:bg-purple-600">Find Coordinates</button>
             </div>
             <button onclick="addTask()" class="mt-4 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Add Task</button>
@@ -85,6 +95,7 @@
         let labels = [];
         let geocodeMarker = null;
         let geocodeLabel = null;
+        let tempLabels = []; // Для временных меток
 
         const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'] });
         socket.on('connect', () => console.log('Connected to WebSocket'));
@@ -115,13 +126,20 @@
                         offset: [0, -20]
                     });
                     marker.on('click', () => {
+                        // Удаляем старые временные метки
+                        tempLabels.forEach(l => l.destroy());
+                        tempLabels = [];
                         const tempLabel = new mapgl.Label(map, {
                             coordinates: [data.longitude, data.latitude],
                             text: `Task ${data.task_id}: Location Update`,
                             offset: [0, -40]
                         });
+                        tempLabels.push(tempLabel);
                         console.log('Temp label added for task:', data.task_id);
-                        setTimeout(() => tempLabel.destroy(), 3000);
+                        setTimeout(() => {
+                            tempLabel.destroy();
+                            tempLabels = tempLabels.filter(l => l !== tempLabel);
+                        }, 3000);
                     });
                     markers.push({ task_id: data.task_id, marker });
                     labels.push({ task_id: data.task_id, label });
@@ -131,6 +149,16 @@
                 }
             }
             console.log('Markers updated:', markers.length);
+        }
+
+        function clearMap() {
+            markers.forEach(m => m.marker.destroy());
+            labels.forEach(l => l.label.destroy());
+            tempLabels.forEach(l => l.destroy());
+            markers = [];
+            labels = [];
+            tempLabels = [];
+            console.log('Map cleared');
         }
 
         async function fetchTasks() {
@@ -153,32 +181,55 @@
 
                 if (map) {
                     console.log('Map status:', map.getCenter(), map.getZoom());
-                    markers.forEach(m => m.marker.destroy());
-                    labels.forEach(l => l.label.destroy());
-                    markers = [];
-                    labels = [];
+                    clearMap(); // Очищаем карту перед обновлением
+                    const coordinates = astanaTasks.map(task => [task.longitude, task.latitude]);
                     astanaTasks.forEach((task, index) => {
                         console.log('Adding marker:', task.id, [task.longitude, task.latitude]);
                         try {
                             const marker = new mapgl.Marker(map, {
                                 coordinates: [task.longitude, task.latitude]
                             });
+                            // Динамическое смещение для предотвращения перекрытия
+                            let offsetY = -20;
+                            let overlap = true;
+                            while (overlap) {
+                                overlap = false;
+                                for (let i = 0; i < index; i++) {
+                                    const otherTask = astanaTasks[i];
+                                    const dist = Math.sqrt(
+                                        Math.pow(task.longitude - otherTask.longitude, 2) +
+                                        Math.pow(task.latitude - otherTask.latitude, 2)
+                                    );
+                                    if (dist < 0.001 && Math.abs(offsetY - labels[i]?.offsetY || 0) < 20) {
+                                        offsetY -= 20;
+                                        overlap = true;
+                                        break;
+                                    }
+                                }
+                            }
                             const label = new mapgl.Label(map, {
                                 coordinates: [task.longitude, task.latitude],
                                 text: `Task ${task.id}: ${task.description}`,
-                                offset: [0, -20 - (index % 3) * 10]
+                                offset: [0, offsetY]
                             });
                             marker.on('click', () => {
+                                // Удаляем старые временные метки
+                                tempLabels.forEach(l => l.destroy());
+                                tempLabels = [];
                                 const tempLabel = new mapgl.Label(map, {
                                     coordinates: [task.longitude, task.latitude],
                                     text: `Task ${task.id}: ${task.description}`,
-                                    offset: [0, -40 - (index % 3) * 10]
+                                    offset: [0, offsetY - 20]
                                 });
+                                tempLabels.push(tempLabel);
                                 console.log('Temp label added for task:', task.id);
-                                setTimeout(() => tempLabel.destroy(), 3000);
+                                setTimeout(() => {
+                                    tempLabel.destroy();
+                                    tempLabels = tempLabels.filter(l => l !== tempLabel);
+                                }, 3000);
                             });
                             markers.push({ task_id: task.id, marker });
-                            labels.push({ task_id: task.id, label });
+                            labels.push({ task_id: task.id, label, offsetY });
                         } catch (e) {
                             console.error('Error adding marker:', task.id, e);
                         }
@@ -242,84 +293,67 @@
             }
         }
 
-        async function suggestAddress() {
-            const address = document.getElementById('address').value;
-            const suggestionsDiv = document.getElementById('suggestions');
-            if (!address || address.length < 3) {
-                suggestionsDiv.classList.add('hidden');
-                return;
-            }
-            try {
-                const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`Астана, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=0fc41365-bc9e-41ec-937e-88e6d9ff3f54`;
-                console.log('Suggest URL:', url);
-                const response = await fetch(url);
-                if (!response.ok) throw new Error(`Suggest HTTP error ${response.status}`);
-                const data = await response.json();
-                console.log('Suggest response:', data);
-                suggestionsDiv.innerHTML = '';
-                if (data.result && data.result.items.length > 0) {
-                    data.result.items.forEach(item => {
-                        const div = document.createElement('div');
-                        div.className = 'suggestion';
-                        div.textContent = item.address_name || item.name;
-                        div.onclick = () => {
-                            document.getElementById('address').value = item.address_name || item.name;
-                            suggestionsDiv.classList.add('hidden');
-                            if (item.point) {
-                                document.getElementById('latitude').value = item.point.lat;
-                                document.getElementById('longitude').value = item.point.lon;
-                                document.getElementById('description').value = item.address_name || item.name;
-                                if (map) {
-                                    map.setCenter([item.point.lon, item.point.lat]);
-                                    if (geocodeMarker) geocodeMarker.destroy();
-                                    if (geocodeLabel) geocodeLabel.destroy();
-                                    try {
-                                        geocodeMarker = new mapgl.Marker(map, {
-                                            coordinates: [item.point.lon, item.point.lat]
-                                        });
-                                        geocodeLabel = new mapgl.Label(map, {
-                                            coordinates: [item.point.lon, item.point.lat],
-                                            text: item.address_name || item.name,
-                                            offset: [0, -20]
-                                        });
-                                        geocodeMarker.on('click', () => {
-                                            const tempLabel = new mapgl.Label(map, {
-                                                coordinates: [item.point.lon, item.point.lat],
-                                                text: item.address_name || item.name,
-                                                offset: [0, -40]
-                                            });
-                                            console.log('Temp label added for geocode');
-                                            setTimeout(() => tempLabel.destroy(), 3000);
-                                        });
-                                        console.log('Geocode marker added:', item.point);
-                                    } catch (e) {
-                                        console.error('Error adding geocode marker:', e);
-                                    }
-                                }
-                                console.log('Suggested coordinates:', item.point);
-                            }
-                        };
-                        suggestionsDiv.appendChild(div);
-                    });
-                    suggestionsDiv.classList.remove('hidden');
-                } else {
-                    suggestionsDiv.classList.add('hidden');
-                }
-            } catch (error) {
-                console.error('Suggest error:', error);
-                suggestionsDiv.classList.add('hidden');
-            }
-        }
-
         async function geocodeAddress() {
             const address = document.getElementById('address').value;
             if (!address) return alert('Enter an address');
-            alert('Please select an address from suggestions to get coordinates.');
+            try {
+                const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`Астана, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=0fc41365-bc9e-41ec-937e-88e6d9ff3f54`;
+                console.log('Geocode URL:', url);
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Geocode HTTP error ${response.status}`);
+                const data = await response.json();
+                console.log('Geocode response:', data);
+                if (data.result && data.result.items.length > 0) {
+                    const item = data.result.items[0];
+                    document.getElementById('latitude').value = item.point.lat;
+                    document.getElementById('longitude').value = item.point.lon;
+                    document.getElementById('description').value = item.address_name || item.name;
+                    if (map) {
+                        map.setCenter([item.point.lon, item.point.lat]);
+                        if (geocodeMarker) geocodeMarker.destroy();
+                        if (geocodeLabel) geocodeLabel.destroy();
+                        try {
+                            geocodeMarker = new mapgl.Marker(map, {
+                                coordinates: [item.point.lon, item.point.lat]
+                            });
+                            geocodeLabel = new mapgl.Label(map, {
+                                coordinates: [item.point.lon, item.point.lat],
+                                text: item.address_name || item.name,
+                                offset: [0, -20]
+                            });
+                            geocodeMarker.on('click', () => {
+                                tempLabels.forEach(l => l.destroy());
+                                tempLabels = [];
+                                const tempLabel = new mapgl.Label(map, {
+                                    coordinates: [item.point.lon, item.point.lat],
+                                    text: item.address_name || item.name,
+                                    offset: [0, -40]
+                                });
+                                tempLabels.push(tempLabel);
+                                console.log('Temp label added for geocode');
+                                setTimeout(() => {
+                                    tempLabel.destroy();
+                                    tempLabels = tempLabels.filter(l => l !== tempLabel);
+                                }, 3000);
+                            });
+                            console.log('Geocode marker added:', item.point);
+                        } catch (e) {
+                            console.error('Error adding geocode marker:', e);
+                        }
+                    }
+                    console.log('Geocoded coordinates:', item.point);
+                } else {
+                    alert('Address not found');
+                }
+            } catch (error) {
+                console.error('Geocode error:', error);
+                alert('Error geocoding address');
+            }
         }
 
         async function addTask() {
             const expeditorIdInput = document.getElementById('expeditor_id').value;
-            const expeditor_id = expeditorIdInput ? parseInt(expeditorIdInput) : 0; // Дефолт 0 если пусто
+            const expeditor_id = expeditorIdInput ? parseInt(expeditorIdInput) : 0;
             const task = {
                 expeditor_id: expeditor_id,
                 description: document.getElementById('description').value,
