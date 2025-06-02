@@ -92,7 +92,6 @@
         }
 
         let markers = [];
-        let labels = [];
         let geocodeMarker = null;
         let geocodeLabel = null;
         let tempLabels = []; // Для временных меток
@@ -111,19 +110,10 @@
             const existing = markers.find(m => m.task_id === data.task_id);
             if (existing) {
                 existing.marker.setCoordinates([data.longitude, data.latitude]);
-                const label = labels.find(l => l.task_id === data.task_id);
-                if (label) {
-                    label.label.setCoordinates([data.longitude, data.latitude]);
-                }
             } else if (map) {
                 try {
                     const marker = new mapgl.Marker(map, {
                         coordinates: [data.longitude, data.latitude]
-                    });
-                    const label = new mapgl.Label(map, {
-                        coordinates: [data.longitude, data.latitude],
-                        text: `Task ${data.task_id}`,
-                        offset: [0, -20]
                     });
                     marker.on('click', () => {
                         // Удаляем старые временные метки
@@ -142,8 +132,7 @@
                         }, 3000);
                     });
                     markers.push({ task_id: data.task_id, marker });
-                    labels.push({ task_id: data.task_id, label });
-                    console.log('Marker and label added:', data.task_id);
+                    console.log('Marker added:', data.task_id);
                 } catch (e) {
                     console.error('Error adding marker:', e);
                 }
@@ -153,10 +142,8 @@
 
         function clearMap() {
             markers.forEach(m => m.marker.destroy());
-            labels.forEach(l => l.label.destroy());
             tempLabels.forEach(l => l.destroy());
             markers = [];
-            labels = [];
             tempLabels = [];
             console.log('Map cleared');
         }
@@ -182,35 +169,11 @@
                 if (map) {
                     console.log('Map status:', map.getCenter(), map.getZoom());
                     clearMap(); // Очищаем карту перед обновлением
-                    const coordinates = astanaTasks.map(task => [task.longitude, task.latitude]);
                     astanaTasks.forEach((task, index) => {
                         console.log('Adding marker:', task.id, [task.longitude, task.latitude]);
                         try {
                             const marker = new mapgl.Marker(map, {
                                 coordinates: [task.longitude, task.latitude]
-                            });
-                            // Динамическое смещение для предотвращения перекрытия
-                            let offsetY = -20;
-                            let overlap = true;
-                            while (overlap) {
-                                overlap = false;
-                                for (let i = 0; i < index; i++) {
-                                    const otherTask = astanaTasks[i];
-                                    const dist = Math.sqrt(
-                                        Math.pow(task.longitude - otherTask.longitude, 2) +
-                                        Math.pow(task.latitude - otherTask.latitude, 2)
-                                    );
-                                    if (dist < 0.001 && Math.abs(offsetY - labels[i]?.offsetY || 0) < 20) {
-                                        offsetY -= 20;
-                                        overlap = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            const label = new mapgl.Label(map, {
-                                coordinates: [task.longitude, task.latitude],
-                                text: `Task ${task.id}: ${task.description}`,
-                                offset: [0, offsetY]
                             });
                             marker.on('click', () => {
                                 // Удаляем старые временные метки
@@ -219,7 +182,7 @@
                                 const tempLabel = new mapgl.Label(map, {
                                     coordinates: [task.longitude, task.latitude],
                                     text: `Task ${task.id}: ${task.description}`,
-                                    offset: [0, offsetY - 20]
+                                    offset: [0, -40]
                                 });
                                 tempLabels.push(tempLabel);
                                 console.log('Temp label added for task:', task.id);
@@ -229,7 +192,6 @@
                                 }, 3000);
                             });
                             markers.push({ task_id: task.id, marker });
-                            labels.push({ task_id: task.id, label, offsetY });
                         } catch (e) {
                             console.error('Error adding marker:', task.id, e);
                         }
@@ -315,11 +277,6 @@
                         try {
                             geocodeMarker = new mapgl.Marker(map, {
                                 coordinates: [item.point.lon, item.point.lat]
-                            });
-                            geocodeLabel = new mapgl.Label(map, {
-                                coordinates: [item.point.lon, item.point.lat],
-                                text: item.address_name || item.name,
-                                offset: [0, -20]
                             });
                             geocodeMarker.on('click', () => {
                                 tempLabels.forEach(l => l.destroy());
