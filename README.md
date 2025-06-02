@@ -10,3 +10,11 @@
 - Фильтр по expeditor_id.
 - Геокодинг (2GIS).
 - WebSocket.
+
+# Отчёт по проекту Expeditor Tracker
+
+## Завершение недели 2
+- Маркеры с метками по клику.
+- Геокодинг без Suggest API (экономия лимитов 2GIS).
+- WebSocket обновляет маркеры.
+- Демо готово: [expeditor-tracker-demo-compressed.mp4](expeditor-tracker-demo-compressed.mp4).
