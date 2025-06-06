@@ -173,6 +173,21 @@ async def create_task(task: Task, current_user: dict = Depends(get_current_user)
     finally:
         await conn.close()
 
+# Эндпоинт для удаления
+@app.delete("/tasks/{task_id}")
+async def delete_task(task_id: int, current_user: dict = Depends(get_current_user)):
+    conn = await get_db_connection()
+    try:
+        # Проверяем, существует ли задача
+        task = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        # Удаляем задачу
+        await conn.execute("DELETE FROM tasks WHERE id = $1", task_id)
+        return {"message": f"Task {task_id} deleted successfully"}
+    finally:
+        await conn.close()
+        
 # Обработчики Socket.IO
 @sio.event
 async def connect(sid, environ, auth=None):

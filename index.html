@@ -56,6 +56,7 @@
                         <th class="p-2">Latitude</th>
                         <th class="p-2">Longitude</th>
                         <th class="p-2">Created At</th>
+                        <th class="p-2">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="taskList"></tbody>
@@ -111,9 +112,9 @@
             if (data.access_token) {
                 localStorage.setItem('token', data.access_token);
                 document.getElementById('token').innerText = 'Logged in!';
-                socket.auth.token = data.access_token; // Обновляем токен для WebSocket
-                if (socket.disconnected) socket.connect(); // Переподключаемся с новым токеном
-                await fetchTasks();
+                socket.auth.token = data.access_token;
+                if (socket.disconnected) socket.connect();
+                await fetchTasks(); // Уже вызывает fetchTasks после логина
             } else {
                 document.getElementById('token').innerText = 'Login failed!';
             }
@@ -123,7 +124,7 @@
         const perPage = 10;
         
         async function fetchTasks() {
-        const token = localStorage.getItem('token');
+            const token = localStorage.getItem('token');
             if (!token) {
                 console.log('No token, please login');
                 return;
@@ -191,6 +192,7 @@
                     <td class="p-2">${task.latitude}</td>
                     <td class="p-2">${task.longitude}</td>
                     <td class="p-2">${task.created_at || 'N/A'}</td>
+                    <td class="p-2"><button onclick="deleteTask(${task.id})" class="bg-red-500 text-white p-1 rounded hover:bg-red-600">Delete</button></td>
                 `;
                 taskList.appendChild(row);
             });
@@ -229,7 +231,6 @@
                 console.error('Error creating chart:', e);
             }
         }
-
         function clearMap() {
             markers.forEach(m => m.marker.destroy());
             tempLabels.forEach(l => l.destroy());
@@ -285,6 +286,28 @@
                 alert('Error geocoding address');
             }
         }
+        async function deleteTask(taskId) {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Please login first');
+                return;
+            }
+            if (!confirm(`Are you sure you want to delete task ${taskId}?`)) {
+                return;
+            }
+            try {
+                const response = await fetch(`http://localhost:8000/tasks/${taskId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+                console.log(`Task ${taskId} deleted successfully`);
+                fetchTasks(); // Обновляем список задач после удаления
+            } catch (error) {
+                console.error('Error deleting task:', error);
+                alert('Failed to delete task');
+            }
+        }
 
         async function addTask() {
             const expeditor_id = parseInt(document.getElementById('expeditor_id').value) || 0;
@@ -318,7 +341,6 @@
             }
         }
 
-        fetchTasks();
     </script>
 </body>
 </html>
