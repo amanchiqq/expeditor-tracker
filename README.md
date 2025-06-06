@@ -18,3 +18,21 @@
 - Геокодинг без Suggest API (экономия лимитов 2GIS).
 - WebSocket обновляет маркеры.
 - Демо готово: [expeditor-tracker-demo-compressed.mp4](expeditor-tracker-demo-compressed.mp4).
+
+
+# Expeditor Tracker
+
+A web application to track tasks for expeditors in Astana using 2GIS maps.
+
+## Features
+- User authentication (login).
+- Add, view, and delete tasks with coordinates.
+- Display tasks on a map (Astana only).
+- Filter tasks by expeditor ID.
+- Pagination for task list.
+
+## Setup
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/amanchiqq/expeditor-tracker.git
+   cd expeditor-tracker
