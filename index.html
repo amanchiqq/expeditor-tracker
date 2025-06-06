@@ -6,30 +6,20 @@
     <title>Expeditor Tracker - Astana (2GIS)</title>
     <link rel="icon" href="data:,">
     <script src="https://mapgl.2gis.com/api/js/v1"></script>
-    <link href="/styles.css" rel="stylesheet">
+    <link href="/output.css" rel="stylesheet"> <!-- Используем output.css после сборки Tailwind -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
-    <style>
-        #map { height: 400px; z-index: 1; position: relative; }
-        body { font-family: Arial, sans-serif; }
-        #suggestions { position: absolute; background: white; border: 1px solid #ccc; z-index: 1000; }
-        .suggestion { padding: 8px; cursor: pointer; }
-        .suggestion:hover { background: #f0f0f0; }
-        .mapgl-label { 
-            background: rgba(255, 255, 255, 0.9); 
-            border: 1px solid #333; 
-            padding: 5px; 
-            border-radius: 5px; 
-            font-size: 12px; 
-            z-index: 2; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
-            white-space: nowrap; 
-        }
-    </style>
 </head>
 <body class="bg-gray-100 p-4">
     <div class="container mx-auto">
         <h1 class="text-2xl font-bold mb-4">Expeditor Tracker - Astana</h1>
+        <div class="mb-6">
+            <h2 class="text-xl font-bold">Login</h2>
+            <input id="username" class="border p-2 rounded" placeholder="Username">
+            <input id="password" type="password" class="border p-2 rounded" placeholder="Password">
+            <button onclick="login()" class="bg-blue-500 text-white p-2 rounded">Login</button>
+            <p id="token" class="mt-2"></p>
+        </div>
         <div class="mb-6">
             <h2 class="text-xl font-semibold mb-2">Map of Astana</h2>
             <div id="map" class="rounded shadow"></div>
@@ -45,7 +35,7 @@
                 <input id="longitude" type="number" step="any" placeholder="Longitude (e.g., 71.47)" class="border p-2 rounded">
             </div>
             <div class="mt-4 relative">
-                <input id="address" type="text" placeholder="Enter address in Astana (e.g., проспект Кабанбай Батыра, 8)" class="border p-2 rounded w-full">
+                <input id="address" type="text" placeholder="Enter address in Astana" class="border p-2 rounded w-full">
                 <button onclick="geocodeAddress()" class="mt-2 bg-purple-500 text-white p-2 rounded hover:bg-purple-600">Find Coordinates</button>
             </div>
             <button onclick="addTask()" class="mt-4 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Add Task</button>
@@ -71,6 +61,10 @@
                 <tbody id="taskList"></tbody>
             </table>
         </div>
+        <div class="mt-4">
+            <button onclick="currentPage--; fetchTasks();" class="bg-blue-500 text-white p-2 rounded mr-2">Previous</button>
+            <button onclick="currentPage++; fetchTasks();" class="bg-blue-500 text-white p-2 rounded">Next</button>
+        </div>
         <div>
             <h2 class="text-xl font-semibold mb-2">Tasks by Expeditor</h2>
             <canvas id="taskChart" class="bg-white rounded shadow"></canvas>
@@ -94,9 +88,9 @@
         let markers = [];
         let geocodeMarker = null;
         let geocodeLabel = null;
-        let tempLabels = []; // Для временных меток
+        let tempLabels = [];
 
-        const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'] });
+        const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'], auth: { token: localStorage.getItem('token') || '' } });
         socket.on('connect', () => console.log('Connected to WebSocket'));
         socket.on('location_update', (data) => {
             console.log('Location update:', data);
@@ -105,39 +99,135 @@
         });
         socket.on('connect_error', (err) => console.error('WebSocket error:', err));
 
-        function updateMapMarker(data) {
-            console.log('Updating marker for task:', data.task_id);
-            const existing = markers.find(m => m.task_id === data.task_id);
-            if (existing) {
-                existing.marker.setCoordinates([data.longitude, data.latitude]);
-            } else if (map) {
-                try {
-                    const marker = new mapgl.Marker(map, {
-                        coordinates: [data.longitude, data.latitude]
-                    });
-                    marker.on('click', () => {
-                        // Удаляем старые временные метки
-                        tempLabels.forEach(l => l.destroy());
-                        tempLabels = [];
-                        const tempLabel = new mapgl.Label(map, {
-                            coordinates: [data.longitude, data.latitude],
-                            text: `Task ${data.task_id}: Location Update`,
-                            offset: [0, -40]
-                        });
-                        tempLabels.push(tempLabel);
-                        console.log('Temp label added for task:', data.task_id);
-                        setTimeout(() => {
-                            tempLabel.destroy();
-                            tempLabels = tempLabels.filter(l => l !== tempLabel);
-                        }, 3000);
-                    });
-                    markers.push({ task_id: data.task_id, marker });
-                    console.log('Marker added:', data.task_id);
-                } catch (e) {
-                    console.error('Error adding marker:', e);
-                }
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const response = await fetch('http://localhost:8000/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+            });
+            const data = await response.json();
+            if (data.access_token) {
+                localStorage.setItem('token', data.access_token);
+                document.getElementById('token').innerText = 'Logged in!';
+                socket.auth.token = data.access_token; // Обновляем токен для WebSocket
+                if (socket.disconnected) socket.connect(); // Переподключаемся с новым токеном
+                await fetchTasks();
+            } else {
+                document.getElementById('token').innerText = 'Login failed!';
             }
-            console.log('Markers updated:', markers.length);
+        }
+
+        let currentPage = 1;
+        const perPage = 10;
+        
+        async function fetchTasks() {
+        const token = localStorage.getItem('token');
+            if (!token) {
+                console.log('No token, please login');
+                return;
+            }
+            const filter = document.getElementById('expeditor_filter').value;
+            const url = filter 
+                ? `http://localhost:8000/tasks?expeditor_id=${filter}&page=${currentPage}&per_page=${perPage}` 
+                : `http://localhost:8000/tasks?page=${currentPage}&per_page=${perPage}`;
+            console.log('Fetching tasks from:', url);
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+            const data = await response.json();
+            const tasks = data.tasks;
+            console.log('Tasks received:', tasks);
+        
+            const astanaTasks = tasks.filter(task => {
+                const inAstana = task.latitude >= 51 && task.latitude <= 52 && task.longitude >= 71 && task.longitude <= 72;
+                console.log(`Task ${task.id}: [${task.latitude}, ${task.longitude}] inAstana: ${inAstana}`);
+                return inAstana;
+            });
+            console.log('Astana tasks:', astanaTasks);
+        
+            if (map) {
+                console.log('Map status:', map.getCenter(), map.getZoom());
+                clearMap();
+                astanaTasks.forEach((task, index) => {
+                    console.log('Adding marker:', task.id, [task.longitude, task.latitude]);
+                    try {
+                        const marker = new mapgl.Marker(map, {
+                            coordinates: [task.longitude, task.latitude]
+                        });
+                        marker.on('click', () => {
+                            tempLabels.forEach(l => l.destroy());
+                            tempLabels = [];
+                            const tempLabel = new mapgl.Label(map, {
+                                coordinates: [task.longitude, task.latitude],
+                                text: `Task ${task.id}: ${task.description}`,
+                                offset: [0, -40]
+                            });
+                            tempLabels.push(tempLabel);
+                            console.log('Temp label added for task:', task.id);
+                            setTimeout(() => {
+                                tempLabel.destroy();
+                                tempLabels = tempLabels.filter(l => l !== tempLabel);
+                            }, 3000);
+                        });
+                        markers.push({ task_id: task.id, marker });
+                    } catch (e) {
+                        console.error('Error adding marker:', task.id, e);
+                    }
+                });
+                console.log('Markers updated:', markers.length);
+            }
+        
+            const taskList = document.getElementById('taskList');
+            taskList.innerHTML = '';
+            tasks.forEach(task => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-2">${task.id}</td>
+                    <td class="p-2">${task.expeditor_id}</td>
+                    <td class="p-2">${task.description || 'N/A'}</td>
+                    <td class="p-2">${task.latitude}</td>
+                    <td class="p-2">${task.longitude}</td>
+                    <td class="p-2">${task.created_at || 'N/A'}</td>
+                `;
+                taskList.appendChild(row);
+            });
+        
+            try {
+                const expCounts = {};
+                tasks.forEach(task => {
+                    expCounts[task.expeditor_id] = (expCounts[task.expeditor_id] || 0) + 1;
+                });
+                console.log('Chart data:', expCounts);
+                const ctx = document.getElementById('taskChart').getContext('2d');
+                if (window.taskChart && typeof window.taskChart.destroy === 'function') {
+                    window.taskChart.destroy();
+                }
+                window.taskChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(expCounts),
+                        datasets: [{
+                            label: 'Tasks',
+                            data: Object.values(expCounts),
+                            backgroundColor: ['rgba(54, 162, 235, 0.5)', 'rgba(255, 99, 132, 0.5)', 'rgba(75, 192, 192, 0.5)'],
+                            borderColor: ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)', 'rgba(75, 192, 192, 1)'],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        plugins: { legend: { display: true, position: 'top' } },
+                        scales: {
+                            y: { beginAtZero: true, title: { display: true, text: 'Number of Tasks' } },
+                            x: { title: { display: true, text: 'Expeditor ID' } }
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Error creating chart:', e);
+            }
         }
 
         function clearMap() {
@@ -146,113 +236,6 @@
             markers = [];
             tempLabels = [];
             console.log('Map cleared');
-        }
-
-        async function fetchTasks() {
-            try {
-                const filter = document.getElementById('expeditor_filter').value;
-                const url = filter ? `http://localhost:8000/tasks?expeditor_id=${filter}` : 'http://localhost:8000/tasks';
-                console.log('Fetching tasks from:', url);
-                const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
-                if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-                const tasksRaw = await response.json();
-                console.log('Tasks received:', tasksRaw);
-
-                const tasks = tasksRaw.map(task => JSON.parse(JSON.stringify(task)));
-                const astanaTasks = tasks.filter(task => {
-                    const inAstana = task.latitude >= 51 && task.latitude <= 52 && task.longitude >= 71 && task.longitude <= 72;
-                    console.log(`Task ${task.id}: [${task.latitude}, ${task.longitude}] inAstana: ${inAstana}`);
-                    return inAstana;
-                });
-                console.log('Astana tasks:', astanaTasks);
-
-                if (map) {
-                    console.log('Map status:', map.getCenter(), map.getZoom());
-                    clearMap(); // Очищаем карту перед обновлением
-                    astanaTasks.forEach((task, index) => {
-                        console.log('Adding marker:', task.id, [task.longitude, task.latitude]);
-                        try {
-                            const marker = new mapgl.Marker(map, {
-                                coordinates: [task.longitude, task.latitude]
-                            });
-                            marker.on('click', () => {
-                                // Удаляем старые временные метки
-                                tempLabels.forEach(l => l.destroy());
-                                tempLabels = [];
-                                const tempLabel = new mapgl.Label(map, {
-                                    coordinates: [task.longitude, task.latitude],
-                                    text: `Task ${task.id}: ${task.description}`,
-                                    offset: [0, -40]
-                                });
-                                tempLabels.push(tempLabel);
-                                console.log('Temp label added for task:', task.id);
-                                setTimeout(() => {
-                                    tempLabel.destroy();
-                                    tempLabels = tempLabels.filter(l => l !== tempLabel);
-                                }, 3000);
-                            });
-                            markers.push({ task_id: task.id, marker });
-                        } catch (e) {
-                            console.error('Error adding marker:', task.id, e);
-                        }
-                    });
-                    console.log('Markers updated:', markers.length);
-                } else {
-                    console.error('Map not initialized, cannot add markers');
-                }
-
-                const taskList = document.getElementById('taskList');
-                taskList.innerHTML = '';
-                tasks.forEach(task => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td class="p-2">${task.id}</td>
-                        <td class="p-2">${task.expeditor_id}</td>
-                        <td class="p-2">${task.description}</td>
-                        <td class="p-2">${task.latitude}</td>
-                        <td class="p-2">${task.longitude}</td>
-                        <td class="p-2">${task.created_at}</td>
-                    `;
-                    taskList.appendChild(row);
-                });
-
-                try {
-                    const expCounts = {};
-                    tasks.forEach(task => {
-                        expCounts[task.expeditor_id] = (expCounts[task.expeditor_id] || 0) + 1;
-                    });
-                    console.log('Chart data:', expCounts);
-                    const chart = {
-                        type: 'bar',
-                        data: {
-                            labels: Object.keys(expCounts),
-                            datasets: [{
-                                label: 'Tasks',
-                                data: Object.values(expCounts),
-                                backgroundColor: ['rgba(54, 162, 235, 0.5)', 'rgba(255, 99, 132, 0.5)', 'rgba(75, 192, 192, 0.5)'],
-                                borderColor: ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)', 'rgba(75, 192, 192, 1)'],
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            plugins: { legend: { display: true, position: 'top' } },
-                            scales: {
-                                y: { beginAtZero: true, title: { display: true, text: 'Number of Tasks' } },
-                                x: { title: { display: true, text: 'Expeditor ID' } }
-                            }
-                        }
-                    };
-                    const ctx = document.getElementById('taskChart').getContext('2d');
-                    if (window.taskChart && typeof window.taskChart.destroy === 'function') {
-                        window.taskChart.destroy();
-                    }
-                    window.taskChart = new Chart(ctx, chart);
-                } catch (e) {
-                    console.error('Error creating chart:', e);
-                }
-            } catch (error) {
-                console.error('Error fetching tasks:', error);
-            }
         }
 
         async function geocodeAddress() {
@@ -264,7 +247,6 @@
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`Geocode HTTP error ${response.status}`);
                 const data = await response.json();
-                console.log('Geocode response:', data);
                 if (data.result && data.result.items.length > 0) {
                     const item = data.result.items[0];
                     document.getElementById('latitude').value = item.point.lat;
@@ -274,31 +256,27 @@
                         map.setCenter([item.point.lon, item.point.lat]);
                         if (geocodeMarker) geocodeMarker.destroy();
                         if (geocodeLabel) geocodeLabel.destroy();
-                        try {
-                            geocodeMarker = new mapgl.Marker(map, {
-                                coordinates: [item.point.lon, item.point.lat]
+                        geocodeMarker = new mapgl.Marker(map, {
+                            coordinates: [item.point.lon, item.point.lat]
+                        });
+                        geocodeMarker.on('click', () => {
+                            tempLabels.forEach(l => l.destroy());
+                            tempLabels = [];
+                            geocodeLabel = new mapgl.Label(map, {
+                                coordinates: [item.point.lon, item.point.lat],
+                                text: item.address_name || item.name,
+                                offset: [0, -40]
                             });
-                            geocodeMarker.on('click', () => {
-                                tempLabels.forEach(l => l.destroy());
-                                tempLabels = [];
-                                const tempLabel = new mapgl.Label(map, {
-                                    coordinates: [item.point.lon, item.point.lat],
-                                    text: item.address_name || item.name,
-                                    offset: [0, -40]
-                                });
-                                tempLabels.push(tempLabel);
-                                console.log('Temp label added for geocode');
-                                setTimeout(() => {
-                                    tempLabel.destroy();
-                                    tempLabels = tempLabels.filter(l => l !== tempLabel);
-                                }, 3000);
-                            });
-                            console.log('Geocode marker added:', item.point);
-                        } catch (e) {
-                            console.error('Error adding geocode marker:', e);
-                        }
+                            tempLabels.push(geocodeLabel);
+                            console.log('Temp label added for geocode');
+                            setTimeout(() => {
+                                geocodeLabel.destroy();
+                                tempLabels = tempLabels.filter(l => l !== geocodeLabel);
+                                geocodeLabel = null;
+                            }, 3000);
+                        });
+                        console.log('Geocode marker added:', item.point);
                     }
-                    console.log('Geocoded coordinates:', item.point);
                 } else {
                     alert('Address not found');
                 }
@@ -309,10 +287,9 @@
         }
 
         async function addTask() {
-            const expeditorIdInput = document.getElementById('expeditor_id').value;
-            const expeditor_id = expeditorIdInput ? parseInt(expeditorIdInput) : 0;
+            const expeditor_id = parseInt(document.getElementById('expeditor_id').value) || 0;
             const task = {
-                expeditor_id: expeditor_id,
+                expeditor_id,
                 description: document.getElementById('description').value,
                 latitude: parseFloat(document.getElementById('latitude').value),
                 longitude: parseFloat(document.getElementById('longitude').value)
@@ -321,11 +298,16 @@
                 alert('Expeditor ID is required');
                 return;
             }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Please login first');
+                return;
+            }
             console.log('Adding task:', task);
             try {
                 const response = await fetch('http://localhost:8000/tasks', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify(task)
                 });
                 if (!response.ok) throw new Error(`HTTP error ${response.status}`);
