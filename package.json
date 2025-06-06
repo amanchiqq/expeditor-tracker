@@ -1,0 +1,26 @@
+{
+  "name": "expeditor-tracker",
+  "version": "1.0.0",
+  "description": "Трекер для экспедиторов в Астане. ## Установка - Python 3.11, PostgreSQL. - `pip install -r requirements.txt`. - `uvicorn main:app --reload`. - `python -m http.server 8080`. ## Функции - Карта с маркерами и labels. - Фильтр по expeditor_id. - Геокодинг (2GIS). - WebSocket.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:css": "tailwindcss -i ./styles.css -o ./output.css --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amanchiqq/expeditor-tracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/amanchiqq/expeditor-tracker/issues"
+  },
+  "homepage": "https://github.com/amanchiqq/expeditor-tracker#readme",
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^3.4.3"
+  }
+}
