@@ -31,6 +31,9 @@ A web application to track tasks for expeditors in Astana using 2GIS maps.
 - Filter tasks by expeditor ID.
 - Pagination for task list.
 
+## Notes
+- Tasks are loaded automatically on page load if a valid token is present in `localStorage`. Log in to ensure the latest data.
+- 
 ## Setup
 1. Clone the repository:
    ```bash
