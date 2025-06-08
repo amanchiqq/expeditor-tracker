@@ -36,3 +36,25 @@
 - Исправить геокодинг (поддержка 2GIS).
 - Отобразить точки на карте.
 - Подготовить демо.
+
+# Project Report: Expeditor Tracker
+
+## Summary
+The Expeditor Tracker project was successfully completed, implementing a web application for task management with map visualization. The backend was built using FastAPI with PostgreSQL, and the frontend used HTML, CSS (Tailwind), and JavaScript with 2GIS Map API.
+
+## Achievements
+- Full CRUD functionality for tasks.
+- Interactive map and chart integration.
+- Pagination, filtering, and login system.
+- Real-time WebSocket updates (basic).
+
+## Challenges
+- Resolved SQL errors in pagination.
+- Fixed automatic task loading by removing `fetchTasks()` call.
+- Managed WebSocket disconnects with proper token handling.
+
+## Future Work
+- Add geolocation and route calculation.
+- Consider an admin panel for enhanced management.
+- Improve WebSocket for full real-time functionality.
+    
