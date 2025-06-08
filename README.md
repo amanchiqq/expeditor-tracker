@@ -111,7 +111,7 @@ A web application to track tasks for expeditors in Astana using 2GIS maps.
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
    );
 
-   INSERT INTO users (username, password) VALUES ('user1', '$2b$12$...'); -- Use hashed password (e.g., via bcrypt)
+   INSERT INTO users (username, password) VALUES ('user1', '$2b$12$hYwUUbORDdilNN8/4ePvHuisBHL/dvdgS8JPgKdk1LN/NOLGJzRs.'); -- Use hashed password (e.g., via bcrypt)
 
 4. **Run the backend:**
    ```bash
