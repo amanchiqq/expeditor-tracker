@@ -1,0 +1,109 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="" />
+  <link rel="stylesheet" as="style" onload="this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&family=Space+Grotesk%3Awght%40400%3B500%3B700" />
+  <title>Login - Expeditor Tracker</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+</head>
+<body>
+  <div class="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden" style='font-family: "Space Grotesk", "Noto Sans", sans-serif;'>
+    <div class="layout-container flex h-full grow flex-col">
+      <div class="px-40 flex flex-1 justify-center py-5">
+        <div class="layout-content-container flex flex-col w-[512px] max-w-[512px] py-5 max-w-[960px] flex-1">
+          <div class="@container">
+            <div class="@[480px]:px-4 @[480px]:py-3">
+              <div class="w-full bg-center bg-no-repeat bg-cover flex flex-col justify-end overflow-hidden bg-slate-50 @[480px]:rounded-lg min-h-[218px]" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuB3w0OVoRQSl7vKrnHoAGCTNQqDRjXOQVgjFiKrvXkuhObylozgl5q5czhEU7puFZRQDYPtfEZhBq6Mw7WUFzh3higF-D595aQF7HHMfE_RzsqXRkk5FAF_r9fovm92q0tA72lPkr5ofmDS5xnUh0jzGcgkk_KS61gNrXvFvLQim4Azeu_8T-dd5-zFgkozw75D7O5oT4U1RVoUt_B7FAloEMlCQvTz3NDY-99vPmcer4wrLbxIkFiwhxccg0I_pv5zMYsTMFX72v_r");'></div>
+            </div>
+          </div>
+          <h2 class="text-[#0e141b] tracking-light text-[28px] font-bold leading-tight px-4 text-center pb-3 pt-5">Вход в систему</h2>
+          <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
+            <label class="flex flex-col min-w-40 flex-1">
+              <input placeholder="Электронная почта" class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7097] p-4 text-base font-normal leading-normal" value="" />
+            </label>
+          </div>
+          <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
+            <label class="flex flex-col min-w-40 flex-1">
+              <input placeholder="Пароль" type="password" class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7097] p-4 text-base font-normal leading-normal" value="" />
+            </label>
+          </div>
+          <div class="flex justify-stretch px-4 py-3">
+            <button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#1978e5] text-slate-50 text-sm font-bold leading-normal tracking-[0.015em] mr-3">
+              <span class="truncate">Войти</span>
+            </button>
+            <a href="#" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#e7edf3] text-[#0e141b] text-sm font-bold leading-normal tracking-[0.015em]">
+              <span class="truncate">Забыли пароль?</span>
+            </a>
+          </div>
+          <p class="text-[#4e7097] text-sm font-normal leading-normal pb-3 pt-1 px-4 text-center">Выберите язык</p>
+          <div class="flex flex-wrap gap-3 p-4">
+            <label class="text-sm font-medium leading-normal flex items-center justify-center rounded-lg border border-[#d0dbe7] px-4 h-11 text-[#0e141b] has-[:checked]:border-[3px] has-[:checked]:px-3.5 has-[:checked]:border-[#1978e5] relative cursor-pointer">
+              Рус<input type="radio" class="invisible absolute" name="language" />
+            </label>
+            <label class="text-sm font-medium leading-normal flex items-center justify-center rounded-lg border border-[#d0dbe7] px-4 h-11 text-[#0e141b] has-[:checked]:border-[3px] has-[:checked]:px-3.5 has-[:checked]:border-[#1978e5] relative cursor-pointer">
+              Қаз<input type="radio" class="invisible absolute" name="language" />
+            </label>
+            <label class="text-sm font-medium leading-normal flex items-center justify-center rounded-lg border border-[#d0dbe7] px-4 h-11 text-[#0e141b] has-[:checked]:border-[3px] has-[:checked]:px-3.5 has-[:checked]:border-[#1978e5] relative cursor-pointer">
+              Eng<input type="radio" class="invisible absolute" name="language" />
+            </label>
+          </div>
+          <p class="text-[#4e7097] text-sm font-normal leading-normal pb-3 pt-1 px-4 text-center">
+            <a href="#" class="underline">Если у вас еще нет аккаунта, зарегистрируйтесь</a>
+          </p>
+        </div>
+      </div>
+    </div>
+    <script>
+      document.querySelector('button[span="Войти"]').addEventListener('click', () => {
+        // Простая проверка (замени на реальную валидацию)
+        const email = document.querySelector('input[placeholder="email"]').value;
+        const password = document.querySelector('input[placeholder="pass"]').value;
+        if (email && password) {
+          window.location.href = 'dashboard.html'; // Редирект на Dashboard
+        } else {
+          alert('Пожалуйста, введите email и пароль!');
+        }
+      });
+    </script>
+</body>
+</html>
