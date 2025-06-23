@@ -1,43 +1,4 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -59,26 +20,27 @@
           <h2 class="text-[#0e141b] tracking-light text-[28px] font-bold leading-tight px-4 text-center pb-3 pt-5">Вход в систему</h2>
           <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
             <label class="flex flex-col min-w-40 flex-1">
-              <input placeholder="Электронная почта" class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7097] p-4 text-base font-normal leading-normal" value="" />
+              <input id="username" placeholder="Электронная почта" class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7097] p-4 text-base font-normal leading-normal" value="user1" />
             </label>
           </div>
           <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
             <label class="flex flex-col min-w-40 flex-1">
-              <input placeholder="Пароль" type="password" class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7097] p-4 text-base font-normal leading-normal" value="" />
+              <input id="password" type="password" placeholder="Пароль" class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7097] p-4 text-base font-normal leading-normal" value="password" />
             </label>
           </div>
           <div class="flex justify-stretch px-4 py-3">
-            <button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#1978e5] text-slate-50 text-sm font-bold leading-normal tracking-[0.015em] mr-3">
+            <button id="loginButton" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#1978e5] text-slate-50 text-sm font-bold leading-normal tracking-[0.015em] mr-3">
               <span class="truncate">Войти</span>
             </button>
             <a href="#" class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#e7edf3] text-[#0e141b] text-sm font-bold leading-normal tracking-[0.015em]">
               <span class="truncate">Забыли пароль?</span>
             </a>
           </div>
+          <p id="loginMessage" class="mt-4 text-center text-red-500"></p>
           <p class="text-[#4e7097] text-sm font-normal leading-normal pb-3 pt-1 px-4 text-center">Выберите язык</p>
           <div class="flex flex-wrap gap-3 p-4">
             <label class="text-sm font-medium leading-normal flex items-center justify-center rounded-lg border border-[#d0dbe7] px-4 h-11 text-[#0e141b] has-[:checked]:border-[3px] has-[:checked]:px-3.5 has-[:checked]:border-[#1978e5] relative cursor-pointer">
-              Рус<input type="radio" class="invisible absolute" name="language" />
+              Рус<input type="radio" class="invisible absolute" name="language" checked />
             </label>
             <label class="text-sm font-medium leading-normal flex items-center justify-center rounded-lg border border-[#d0dbe7] px-4 h-11 text-[#0e141b] has-[:checked]:border-[3px] has-[:checked]:px-3.5 has-[:checked]:border-[#1978e5] relative cursor-pointer">
               Қаз<input type="radio" class="invisible absolute" name="language" />
@@ -94,16 +56,38 @@
       </div>
     </div>
     <script>
-      document.querySelector('button[span="Войти"]').addEventListener('click', () => {
-        // Простая проверка (замени на реальную валидацию)
-        const email = document.querySelector('input[placeholder="email"]').value;
-        const password = document.querySelector('input[placeholder="pass"]').value;
-        if (email && password) {
-          window.location.href = 'dashboard.html'; // Редирект на Dashboard
-        } else {
-          alert('Пожалуйста, введите email и пароль!');
+      document.getElementById('loginButton').addEventListener('click', async () => {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const loginMessage = document.getElementById('loginMessage');
+
+        if (!username || !password) {
+          loginMessage.textContent = 'Пожалуйста, введите email и пароль!';
+          return;
+        }
+
+        try {
+          const response = await fetch('http://localhost:8000/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+          });
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Login failed');
+          }
+          const data = await response.json();
+          if (data.access_token) {
+            localStorage.setItem('token', data.access_token);
+            window.location.href = 'dashboard.html';
+          } else {
+            loginMessage.textContent = 'Неверные учетные данные!';
+          }
+        } catch (error) {
+          console.error('Login error:', error);
+          loginMessage.textContent = error.message || 'Ошибка при входе, попробуйте снова!';
         }
       });
     </script>
-</body>
+  </body>
 </html>
