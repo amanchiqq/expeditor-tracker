@@ -34,6 +34,7 @@ jobs:
       - run: pip install -r requirements-browser.txt
       - run: python -m playwright install --with-deps chromium
       - run: npm install --no-save --ignore-scripts --package-lock=false socket.io-client@4.7.5
+      - run: npm run build:css
       - name: Browser workflow with PostgreSQL and two dispatchers
         run: python -m pytest tests/test_browser.py -q -s
         env:

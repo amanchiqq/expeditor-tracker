@@ -83,13 +83,13 @@ class PhotonSearch:
                 await asyncio.sleep(pause)
             self.last_request = self.clock()
             try:
-                response = await self.client.get(self.endpoint, params={
+                response = await asyncio.wait_for(self.client.get(self.endpoint, params={
                     "q": query, "limit": 5, "lat": 51.16, "lon": 71.47,
                     "bbox": "70.8,50.8,72.0,51.7",
-                })
+                }), timeout=5)
                 response.raise_for_status()
                 results = normalize_features(response.json())
-            except (httpx.HTTPError, ValueError, TypeError) as error:
+            except (httpx.HTTPError, ValueError, TypeError, asyncio.TimeoutError) as error:
                 raise SearchUnavailable() from error
             self.cache[key] = (self.clock() + self.ttl, results)
             self.cache.move_to_end(key)
