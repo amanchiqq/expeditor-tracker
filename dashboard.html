@@ -440,7 +440,7 @@
         if (!address) return alert('Enter an address');
         if (!window.TRACKER_CONFIG.geocodeKey) return alert('Configure geocodeKey in frontend-config.js or enter coordinates manually');
         try {
-          const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`������, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=${encodeURIComponent(window.TRACKER_CONFIG.geocodeKey)}`;
+          const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`Астана, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=${encodeURIComponent(window.TRACKER_CONFIG.geocodeKey)}`;
           console.log('Geocode URL:', url);
           const response = await trackerFetch(url);
           if (!response.ok) throw new Error(`Geocode HTTP error ${response.status}`);

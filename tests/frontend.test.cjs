@@ -9,6 +9,7 @@ const root = path.join(__dirname, '..');
 for (const file of ['dashboard.html','login.html','index.html','app-client.js','frontend-config.js']) {
   test(`JavaScript syntax: ${file}`, () => {
     const source = fs.readFileSync(path.join(root,file),'utf8');
+    assert.ok(!source.includes('\uFFFD'), `Invalid text encoding in ${file}`);
     const scripts = file.endsWith('.html') ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(x=>x[1]) : [source];
     for (const code of scripts.filter(x=>x.trim())) {
       const result = spawnSync(process.execPath,['--check'],{input:code,encoding:'utf8'});
