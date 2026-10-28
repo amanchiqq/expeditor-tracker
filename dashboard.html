@@ -7,11 +7,12 @@
   <link rel="stylesheet" as="style" onload="this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&family=Space+Grotesk%3Awght%40400%3B500%3B700" />
   <title>Dashboard - Expeditor Tracker</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-  <script src="https://mapgl.2gis.com/api/js/v1"></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.16.0/dist/maplibre-gl.css">
   <script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="frontend-config.js"></script>
   <script src="app-client.js"></script>
+  <script src="tracker-map.js"></script>
 </head>
 <body>
   <div class="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden" style='--select-button-svg: url("data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724px%27 height=%2724px%27 fill=%27rgb(78,112,151)%27 viewBox=%270 0 256 256%27%3e%3cpath d=%27M181.66,170.34a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32,0l-48-48a8,8,0,0,1,11.32-11.32L128,212.69l42.34-42.35A8,8,0,0,1,181.66,170.34Zm-96-84.68L128,43.31l42.34,42.35a8,8,0,0,0,11.32-11.32l-48-48a8,8,0,0,0-11.32,0l-48,48A8,8,0,0,0,85.66,85.66Z%27%3e%3c/path%3e%3c/svg%3e'); font-family: "Space Grotesk", "Noto Sans", sans-serif;'>
@@ -72,13 +73,13 @@
           </div>
         </div>
         <div class="flex-1">
-          <div class="h-[600px] rounded-lg overflow-hidden shadow-md">
-            <div id="map" class="w-full h-full relative">
-              <div class="absolute top-4 left-4 z-10 bg-white rounded-lg shadow p-4 w-[300px]">
-                <h2 class="text-xl font-semibold mb-2 text-[#0e141b]">Find Coordinates</h2>
-                <input id="address" type="text" placeholder="Enter address in Astana" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-                <button onclick="geocodeAddress()" class="w-full bg-purple-500 text-white p-2 rounded hover:bg-purple-600 transition-colors duration-200">Find Coordinates</button>
-              </div>
+          <div class="relative h-[600px] rounded-lg overflow-hidden shadow-md" style="height:600px;position:relative">
+            <div id="map" style="width:100%;height:100%" aria-label="Карта задач"></div>
+            <div class="absolute top-4 left-4 z-10 bg-white rounded-lg shadow p-4 max-w-[300px]">
+              <h2 class="text-lg font-semibold mb-2">Точка новой задачи</h2>
+              <p class="text-sm mb-2">Нажмите на карту. Зелёную метку можно перетащить. Затем нажмите Add Task.</p>
+              <p id="selectedCoordinates" class="text-sm font-medium">Точка не выбрана</p>
+              <p id="mapStatus" role="status" aria-live="polite" class="text-sm mt-2">Загружаем карту…</p>
             </div>
           </div>
           <h2 class="text-[#0e141b] text-[22px] font-bold leading-tight tracking-[-0.015em] pt-6 pb-3">Statistics</h2>
@@ -107,9 +108,8 @@
                 <thead>
                   <tr class="bg-slate-50">
                     <th class="px-4 py-3 text-left text-[#0e141b] text-sm font-medium leading-normal">ID</th>
-                    <th class="px-4 py-3 text-left text-[#0e141b] text-sm font-medium leading-normal">Address</th>
+                    <th class="px-4 py-3 text-left text-[#0e141b] text-sm font-medium leading-normal">Description</th>
                     <th class="px-4 py-3 text-left text-[#0e141b] text-sm font-medium leading-normal">Status</th>
-                    <th class="px-4 py-3 text-left text-[#0e141b] text-sm font-medium leading-normal">Comment</th>
                     <th class="px-4 py-3 text-left text-[#0e141b] text-sm font-medium leading-normal">Creation Time</th>
                     <th class="px-4 py-3 text-left text-[#0e141b] text-sm font-medium leading-normal">ETA</th>
                     <th class="px-4 py-3 text-left text-[#4e7097] text-sm font-medium leading-normal">Actions</th>
@@ -143,11 +143,6 @@
       </div>
     </div>
     <script>
-      let map;
-      let markers = [];
-      let geocodeMarker = null;
-      let geocodeLabel = null;
-      let tempLabels = [];
       let currentPage = 1;
       let totalPages = 1;
       let fetchGeneration = 0;
@@ -166,17 +161,18 @@
         if (loading) loading.classList.add('hidden');
       }
 
-      try {
-        if (!window.TRACKER_CONFIG.mapKey) throw new Error('Configure mapKey in frontend-config.js to enable the map');
-        map = new mapgl.Map('map', {
-          center: [71.47, 51.16],
-          zoom: 12,
-          key: window.TRACKER_CONFIG.mapKey
-        });
-        console.log('Map initialized successfully');
-      } catch (error) {
-        console.error('Map initialization error:', error);
-      }
+      const taskMap = new TrackerMap({
+        container: 'map',
+        styleUrl: window.TRACKER_CONFIG.mapStyleUrl,
+        onSelect: point => {
+          selectedLat = point ? point.latitude : null;
+          selectedLon = point ? point.longitude : null;
+          document.getElementById('selectedCoordinates').textContent = point
+            ? `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}` : 'Точка не выбрана';
+        },
+        onStatus: message => { document.getElementById('mapStatus').textContent = message; }
+      });
+      window.addEventListener('beforeunload', () => taskMap.destroy());
 
       const socket = io(API_BASE, { autoConnect: false, path: '/socket.io', transports: ['websocket'], auth: { token: localStorage.getItem('token') || '' } });
       socket.on('connect', () => console.log('Connected to WebSocket'));
@@ -214,34 +210,8 @@
           console.log('Received data:', data);
           let tasks = data.tasks || [];
 
-          clearMap();
+          taskMap.setTasks(tasks);
           if (tasks.length > 0) {
-            tasks.forEach((task, index) => {
-              if (map && task.latitude !== null && task.longitude !== null && task.latitude >= 51 && task.latitude <= 52 && task.longitude >= 71 && task.longitude <= 72) {
-                const marker = new mapgl.Marker(map, {
-                  coordinates: [task.longitude, task.latitude],
-                  color: '#1978e5',
-                  size: [30, 30]
-                });
-                marker.on('click', () => {
-                  tempLabels.forEach(l => l.destroy());
-                  tempLabels = [];
-                  const tempLabel = new mapgl.Label(map, {
-                    coordinates: [task.longitude, task.latitude],
-                    text: `Task ${task.id}: ${task.description || 'N/A'}`,
-                    offset: [0, -40],
-                    style: { backgroundColor: 'rgba(25, 120, 229, 0.8)', color: 'white', padding: '4px' }
-                  });
-                  tempLabels.push(tempLabel);
-                  setTimeout(() => {
-                    if (tempLabels.includes(tempLabel)) tempLabel.destroy();
-                    tempLabels = tempLabels.filter(l => l !== tempLabel);
-                  }, 3000);
-                });
-                markers.push({ task_id: task.id, marker });
-              }
-            });
-
             const tbody = document.getElementById('tasksBody');
             tbody.innerHTML = '';
             tasks.forEach(task => {
@@ -249,7 +219,7 @@
             });
           } else {
             const tbody = document.getElementById('tasksBody');
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-[#4e7097]">No tasks found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-[#4e7097]">No tasks found</td></tr>';
           }
 
           document.getElementById('pageInfo').textContent = `Page ${data.page} of ${totalPages}`;
@@ -293,16 +263,8 @@
       }
 
       function clearMap() {
-        markers.forEach(m => m.marker.destroy());
-        tempLabels.forEach(l => l.destroy());
-        markers = [];
-        tempLabels = [];
-        if (geocodeMarker) geocodeMarker.destroy();
-        geocodeMarker = null;
-        geocodeLabel = null;
-        selectedLat = null;
-        selectedLon = null;
-        console.log('Map cleared');
+        taskMap.clearTasks();
+        taskMap.clearSelection();
       }
 
       function refreshMap() {
@@ -368,21 +330,22 @@
           if (!response.ok) throw new Error(`HTTP error ${response.status}`);
           const task = await response.json();
           const form = document.createElement('div');
+          form.className = 'task-modal';
           form.innerHTML = `
             <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
               <div class="bg-white p-6 rounded-lg shadow-lg border border-[#d0dbe7] w-96">
                 <h3 class="text-lg font-bold mb-4 text-[#0e141b]">Edit Task ${taskId}</h3>
                 <input id="edit_expeditor_id" type="number" value="${task.expeditor_id}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <input id="edit_description" type="text" value="" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-                <input id="edit_latitude" type="number" step="0.000001" value="${task.latitude ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-                <input id="edit_longitude" type="number" step="0.000001" value="${task.longitude ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+                <input aria-label="Latitude" placeholder="Latitude" id="edit_latitude" type="number" step="0.000001" value="${task.latitude ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+                <input aria-label="Longitude" placeholder="Longitude" id="edit_longitude" type="number" step="0.000001" value="${task.longitude ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <select id="edit_status" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                   <option value="in_progress" ${task.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
                   <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Completed</option>
                 </select>
                 <input id="edit_eta" type="datetime-local" value="${localDateTime(task.eta)}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <div class="flex justify-end">
-                  <button onclick="document.querySelector('.fixed').remove()" class="bg-gray-500 text-white p-2 rounded mr-2 hover:bg-gray-600">Cancel</button>
+                  <button onclick="document.querySelector('.task-modal')?.remove()" class="bg-gray-500 text-white p-2 rounded mr-2 hover:bg-gray-600">Cancel</button>
                   <button onclick="updateTask(${taskId})" class="bg-[#1978e5] text-white p-2 rounded hover:bg-[#155ab9]">Save</button>
                 </div>
               </div>
@@ -424,7 +387,7 @@
           });
           if (!response.ok) throw new Error(`HTTP error ${response.status}`);
           console.log(`Task ${taskId} updated successfully`);
-          document.querySelector('.fixed').remove();
+          document.querySelector('.task-modal')?.remove();
           fetchTasks(false);
         } catch (error) {
           console.error('Error updating task:', error);
@@ -435,76 +398,25 @@
       }
 
 
-      async function geocodeAddress() {
-        const address = document.getElementById('address').value;
-        if (!address) return alert('Enter an address');
-        if (!window.TRACKER_CONFIG.geocodeKey) return alert('Configure geocodeKey in frontend-config.js or enter coordinates manually');
-        try {
-          const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`Астана, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=${encodeURIComponent(window.TRACKER_CONFIG.geocodeKey)}`;
-          console.log('Geocode URL:', url);
-          const response = await trackerFetch(url);
-          if (!response.ok) throw new Error(`Geocode HTTP error ${response.status}`);
-          const data = await response.json();
-          if (data.result && data.result.items.length > 0) {
-            const item = data.result.items[0];
-            selectedLat = item.point.lat;
-            selectedLon = item.point.lon;
-            if (map) {
-              map.setCenter([item.point.lon, item.point.lat]);
-              if (geocodeMarker) geocodeMarker.destroy();
-              if (geocodeLabel) geocodeLabel.destroy();
-              geocodeMarker = new mapgl.Marker(map, {
-                coordinates: [item.point.lon, item.point.lat],
-                color: '#4CAF50',
-                size: [30, 30]
-              });
-              geocodeMarker.on('click', () => {
-                tempLabels.forEach(l => l.destroy());
-                tempLabels = [];
-                geocodeLabel = new mapgl.Label(map, {
-                  coordinates: [item.point.lon, item.point.lat],
-                  text: item.address_name || item.name,
-                  offset: [0, -40],
-                  style: { backgroundColor: 'rgba(76, 175, 80, 0.8)', color: 'white', padding: '4px' }
-                });
-                tempLabels.push(geocodeLabel);
-                console.log('Temp label added for geocode');
-                const label = geocodeLabel;
-                setTimeout(() => {
-                  if (tempLabels.includes(label)) label.destroy();
-                  tempLabels = tempLabels.filter(l => l !== label);
-                  if (geocodeLabel === label) geocodeLabel = null;
-                }, 3000);
-              });
-              console.log('Geocode marker added:', item.point);
-            }
-          } else {
-            alert('Address not found');
-          }
-        } catch (error) {
-          console.error('Geocode error:', error);
-          alert('Error geocoding address');
-        }
-      }
-
       async function addTaskWithCoordinates() {
-        // Coordinates can be entered manually when geocoding is unavailable.
+        // A map selection pre-fills the form; manual coordinates work without a map.
         const form = document.createElement('div');
+        form.className = 'task-modal';
         form.innerHTML = `
           <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white p-6 rounded-lg shadow-lg border border-[#d0dbe7] w-96">
               <h3 class="text-lg font-bold mb-4 text-[#0e141b]">Add New Task</h3>
               <input id="add_expeditor_id" type="number" placeholder="Expeditor ID" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
               <input id="add_description" type="text" placeholder="Description" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-              <input id="add_latitude" type="number" step="0.000001" value="${selectedLat ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-              <input id="add_longitude" type="number" step="0.000001" value="${selectedLon ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+              <input aria-label="Latitude" placeholder="Latitude" id="add_latitude" type="number" step="0.000001" value="${selectedLat ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+              <input aria-label="Longitude" placeholder="Longitude" id="add_longitude" type="number" step="0.000001" value="${selectedLon ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
               <select id="add_status" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
               </select>
               <input id="add_eta" type="datetime-local" placeholder="ETA" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
               <div class="flex justify-end">
-                <button onclick="document.querySelector('.fixed').remove()" class="bg-gray-500 text-white p-2 rounded mr-2 hover:bg-gray-600">Cancel</button>
+                <button onclick="document.querySelector('.task-modal')?.remove()" class="bg-gray-500 text-white p-2 rounded mr-2 hover:bg-gray-600">Cancel</button>
                 <button onclick="addTask()" class="bg-[#1978e5] text-white p-2 rounded hover:bg-[#155ab9]">Add Task</button>
               </div>
             </div>
@@ -544,11 +456,9 @@
           });
           if (!response.ok) throw new Error(`HTTP error ${response.status}`);
           console.log('Task added successfully');
-          document.querySelector('.fixed').remove();
+          document.querySelector('.task-modal')?.remove();
           fetchTasks(false);
-          selectedLat = null;
-          selectedLon = null;
-          clearMap();
+          taskMap.clearSelection();
         } catch (error) {
           console.error('Error adding task:', error);
           alert('Error adding task. Check server logs or CORS configuration.');
