@@ -7,6 +7,7 @@ import time
 import os
 
 import asyncpg
+import httpx
 import socketio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from app.config import allowed_origins, validate_settings
 from app.schemas import TaskCreate, TaskResponse, TaskPage, TaskStatus, Token
 from app.security import create_access_token, decode_username, decode_claims, get_password_hash, verify_password
 from app import repository
+from app.geocoding import PhotonSearch, SearchBusy, SearchUnavailable
 
 logger = logging.getLogger(__name__)
 session_expiry_tasks = {}
@@ -30,9 +32,16 @@ async def lifespan(application):
         dsn=os.environ["DATABASE_URL"], min_size=1, max_size=10,
         command_timeout=15, server_settings={"timezone": "UTC"},
     )
+    application.state.geocoding_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(5), follow_redirects=False,
+        headers={"User-Agent": "ExpeditorTracker/1.0 (+https://github.com/amanchiqq/expeditor-tracker)"},
+    )
+    application.state.geocoder = PhotonSearch(application.state.geocoding_client,
+        os.environ.get("PHOTON_API_URL", "https://photon.komoot.io/api/"))
     try:
         yield
     finally:
+        await application.state.geocoding_client.aclose()
         pending = list(session_expiry_tasks.values())
         for task in pending:
             task.cancel()
@@ -73,6 +82,23 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), conn=Depends(get_co
     if not user or not verify_password(form.password, user["password"]):
         raise HTTPException(status_code=401, detail="Incorrect username or password", headers={"WWW-Authenticate": "Bearer"})
     return {"access_token": create_access_token({"sub": user["username"]}), "token_type": "bearer"}
+
+
+@api.get("/geocode")
+async def geocode(request: Request, q: str = Query(min_length=3, max_length=200),
+                  current_user: dict = Depends(get_current_user)):
+    q = " ".join(q.split())
+    if len(q) < 3:
+        raise HTTPException(status_code=422, detail="Query must contain 3 to 200 characters")
+    try:
+        results = await request.app.state.geocoder.search(q, current_user["username"])
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Query must contain 3 to 200 characters")
+    except SearchBusy:
+        raise HTTPException(status_code=429, detail="Search is busy. Try again shortly.", headers={"Retry-After": "5"})
+    except SearchUnavailable:
+        raise HTTPException(status_code=503, detail="Address search is unavailable. Select a point on the map or enter coordinates manually.")
+    return {"results": results, "attribution": "Photon / OpenStreetMap contributors"}
 
 
 @api.get("/tasks", response_model=TaskPage)

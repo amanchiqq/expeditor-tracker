@@ -13,6 +13,7 @@
   <script src="frontend-config.js"></script>
   <script src="app-client.js"></script>
   <script src="tracker-map.js"></script>
+  <script src="address-search.js"></script>
 </head>
 <body>
   <div class="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden" style='--select-button-svg: url("data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724px%27 height=%2724px%27 fill=%27rgb(78,112,151)%27 viewBox=%270 0 256 256%27%3e%3cpath d=%27M181.66,170.34a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32,0l-48-48a8,8,0,0,1,11.32-11.32L128,212.69l42.34-42.35A8,8,0,0,1,181.66,170.34Zm-96-84.68L128,43.31l42.34,42.35a8,8,0,0,0,11.32-11.32l-48-48a8,8,0,0,0-11.32,0l-48,48A8,8,0,0,0,85.66,85.66Z%27%3e%3c/path%3e%3c/svg%3e'); font-family: "Space Grotesk", "Noto Sans", sans-serif;'>
@@ -49,6 +50,10 @@
           <h2 class="text-[#0e141b] text-[22px] font-bold leading-tight tracking-[-0.015em] pb-3">Filters</h2>
           <div class="flex flex-col gap-4">
             <label class="flex flex-col">
+              <p class="text-base font-medium pb-2">Исполнитель</p>
+              <input id="expeditorFilter" aria-label="ID исполнителя" type="number" min="1" placeholder="Все исполнители" class="form-input w-full rounded-lg border bg-slate-50 h-12 p-2">
+            </label>
+            <label class="flex flex-col">
               <p class="text-[#0e141b] text-base font-medium leading-normal pb-2">Task</p>
               <input id="taskFilter" type="number" min="1" placeholder="Task ID" class="form-input w-full rounded-lg border border-[#d0dbe7] bg-slate-50 focus:border-[#1978e5] h-12 p-2 text-base font-normal leading-normal">
             </label>
@@ -73,6 +78,15 @@
           </div>
         </div>
         <div class="flex-1">
+          <section class="bg-white rounded-lg border p-4 mb-4" aria-label="Поиск адресов">
+            <form id="addressSearchForm" class="flex gap-2 flex-wrap">
+              <input id="addressQuery" aria-label="Адрес или место в Астане" placeholder="Адрес или место в Астане" minlength="3" maxlength="200" required class="border rounded p-2 flex-1 min-w-0">
+              <button id="addressSearchButton" type="submit" class="rounded bg-blue-600 text-white px-4 py-2">Найти адрес</button>
+            </form>
+            <p id="addressStatus" role="status" aria-live="polite" class="text-sm mt-2"></p>
+            <ul id="addressResults" aria-label="Найденные адреса" class="space-y-2 mt-2"></ul>
+            <p class="text-xs text-slate-500 mt-2">Поиск: Photon · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a></p>
+          </section>
           <div class="relative h-[600px] rounded-lg overflow-hidden shadow-md" style="height:600px;position:relative">
             <div id="map" style="width:100%;height:100%" aria-label="Карта задач"></div>
             <div class="absolute top-4 left-4 z-10 bg-white rounded-lg shadow p-4 max-w-[300px]">
@@ -85,16 +99,16 @@
           <h2 class="text-[#0e141b] text-[22px] font-bold leading-tight tracking-[-0.015em] pt-6 pb-3">Statistics</h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
             <div class="flex flex-col gap-2 p-6 rounded-lg border border-[#d0dbe7] bg-white shadow">
-              <p class="text-[#0e141b] text-base font-medium leading-normal">Active Couriers</p>
-              <p class="text-[#0e141b] text-2xl font-bold leading-tight">15</p>
+              <p class="text-[#0e141b] text-base font-medium leading-normal">Исполнителей в выборке</p>
+              <p id="expeditorCount" class="text-[#0e141b] text-2xl font-bold leading-tight">—</p>
             </div>
             <div class="flex flex-col gap-2 p-6 rounded-lg border border-[#d0dbe7] bg-white shadow">
-              <p class="text-[#0e141b] text-base font-medium leading-normal">Tasks in Progress</p>
-              <p class="text-[#0e141b] text-2xl font-bold leading-tight">22</p>
+              <p class="text-[#0e141b] text-base font-medium leading-normal">Задач в работе</p>
+              <p id="inProgressCount" class="text-[#0e141b] text-2xl font-bold leading-tight">—</p>
             </div>
             <div class="flex flex-col gap-2 p-6 rounded-lg border border-[#d0dbe7] bg-white shadow">
-              <p class="text-[#0e141b] text-base font-medium leading-normal">Completed Tasks</p>
-              <p class="text-[#0e141b] text-2xl font-bold leading-tight">45</p>
+              <p class="text-[#0e141b] text-base font-medium leading-normal">Завершённых задач</p>
+              <p id="completedCount" class="text-[#0e141b] text-2xl font-bold leading-tight">—</p>
             </div>
           </div>
           <h2 class="text-[#0e141b] text-[22px] font-bold leading-tight tracking-[-0.015em] pt-6 pb-3">Tasks by Expeditor</h2>
@@ -102,6 +116,7 @@
             <canvas id="taskChart" class="bg-white rounded-lg shadow w-full h-64"></canvas>
           </div>
           <h2 class="text-[#0e141b] text-[22px] font-bold leading-tight tracking-[-0.015em] pt-6 pb-3">Tasks</h2>
+          <p id="timeZoneNote" class="text-sm px-4"></p>
           <div class="p-4">
             <div class="overflow-x-auto rounded-lg border border-[#d0dbe7] bg-white shadow">
               <table class="w-full" id="tasksTable">
@@ -121,13 +136,13 @@
               </table>
             </div>
             <div class="flex items-center justify-center gap-4 mt-4">
-              <button class="flex items-center justify-center w-10 h-10 text-[#0e141b] hover:bg-[#e7edf3] rounded-full" onclick="prevPage()">
+              <button class="flex items-center justify-center w-10 h-10 text-[#0e141b] hover:bg-[#e7edf3] rounded-full" aria-label="Предыдущая страница" onclick="prevPage()">
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 256 256">
                   <path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"></path>
                 </svg>
               </button>
-              <span id="pageInfo" class="text-sm font-bold text-[#0e141b] bg-[#e7edf3] rounded-full w-10 h-10 flex items-center justify-center"></span>
-              <button class="flex items-center justify-center w-10 h-10 text-[#0e141b] hover:bg-[#e7edf3] rounded-full" onclick="nextPage()">
+              <span id="pageInfo" class="text-sm font-bold text-[#0e141b] bg-[#e7edf3] rounded-full px-4 h-10 flex items-center justify-center"></span>
+              <button class="flex items-center justify-center w-10 h-10 text-[#0e141b] hover:bg-[#e7edf3] rounded-full" aria-label="Следующая страница" onclick="nextPage()">
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 256 256">
                   <path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"></path>
                 </svg>
@@ -150,6 +165,7 @@
       let taskChart = null;
       let selectedLat = null;
       let selectedLon = null;
+      let selectedAddress = "";
 
       function showLoading() {
         const loading = document.getElementById('loading');
@@ -165,6 +181,7 @@
         container: 'map',
         styleUrl: window.TRACKER_CONFIG.mapStyleUrl,
         onSelect: point => {
+          selectedAddress = "";
           selectedLat = point ? point.latitude : null;
           selectedLon = point ? point.longitude : null;
           document.getElementById('selectedCoordinates').textContent = point
@@ -173,6 +190,30 @@
         onStatus: message => { document.getElementById('mapStatus').textContent = message; }
       });
       window.addEventListener('beforeunload', () => taskMap.destroy());
+
+      new AddressSearch({
+        form: document.getElementById('addressSearchForm'),
+        input: document.getElementById('addressQuery'),
+        button: document.getElementById('addressSearchButton'),
+        results: document.getElementById('addressResults'),
+        status: document.getElementById('addressStatus'),
+        search: async (query, signal) => {
+          const token = localStorage.getItem('token');
+          const response = await trackerFetch(`${API_BASE}/geocode?q=${encodeURIComponent(query)}`, {
+            signal, headers:{Authorization:`Bearer ${token}`}
+          });
+          if (!response.ok) throw new Error(response.status === 429
+            ? 'Поиск занят. Повторите через несколько секунд.'
+            : 'Поиск недоступен. Выберите точку на карте или введите координаты.');
+          return (await response.json()).results;
+        },
+        onPick: item => {
+          taskMap.focus(item.latitude, item.longitude);
+          selectedAddress = item.label;
+        }
+      });
+      document.getElementById('timeZoneNote').textContent =
+        `Время задач: ${Intl.DateTimeFormat().resolvedOptions().timeZone}. Фильтр по дате — UTC.`;
 
       const socket = io(API_BASE, { autoConnect: false, path: '/socket.io', transports: ['websocket'], auth: { token: localStorage.getItem('token') || '' } });
       socket.on('connect', () => console.log('Connected to WebSocket'));
@@ -192,9 +233,11 @@
           return;
         }
         const taskFilter = document.getElementById('taskFilter').value;
+        const expeditorFilter = document.getElementById('expeditorFilter').value;
         const statusFilter = document.getElementById('statusFilter').value;
         const dateFilter = document.getElementById('dateFilter').value;
-        const url = `${API_BASE}/tasks?page=${currentPage}&per_page=${tasksPerPage}${taskFilter ? `&task_id=${taskFilter}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}${dateFilter ? `&date=${dateFilter}` : ''}`;
+        const url = taskListUrl({page:currentPage,perPage:tasksPerPage,taskId:taskFilter,
+          expeditorId:expeditorFilter,status:statusFilter,date:dateFilter});
         console.log('Fetching tasks from:', url);
         try {
           const response = await trackerFetch(url, {
@@ -222,9 +265,12 @@
             tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-[#4e7097]">No tasks found</td></tr>';
           }
 
-          document.getElementById('pageInfo').textContent = `Page ${data.page} of ${totalPages}`;
+          document.getElementById('pageInfo').textContent = `Страница ${data.page} из ${totalPages}`;
 
           const expCounts = data.expeditor_counts || {};
+          document.getElementById('expeditorCount').textContent = Object.keys(expCounts).length;
+          document.getElementById('inProgressCount').textContent = data.status_counts.in_progress;
+          document.getElementById('completedCount').textContent = data.status_counts.completed;
           if (typeof Chart === 'undefined') return;
           if (taskChart) taskChart.destroy();
           const ctx = document.getElementById('taskChart').getContext('2d');
@@ -343,7 +389,7 @@
                   <option value="in_progress" ${task.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
                   <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Completed</option>
                 </select>
-                <input id="edit_eta" type="datetime-local" value="${localDateTime(task.eta)}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+                <input id="edit_eta" type="datetime-local" step="0.001" value="${localDateTime(task.eta)}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <div class="flex justify-end">
                   <button onclick="document.querySelector('.task-modal')?.remove()" class="bg-gray-500 text-white p-2 rounded mr-2 hover:bg-gray-600">Cancel</button>
                   <button onclick="updateTask(${taskId})" class="bg-[#1978e5] text-white p-2 rounded hover:bg-[#155ab9]">Save</button>
@@ -414,7 +460,7 @@
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
               </select>
-              <input id="add_eta" type="datetime-local" placeholder="ETA" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+              <input id="add_eta" type="datetime-local" step="0.001" placeholder="ETA" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
               <div class="flex justify-end">
                 <button onclick="document.querySelector('.task-modal')?.remove()" class="bg-gray-500 text-white p-2 rounded mr-2 hover:bg-gray-600">Cancel</button>
                 <button onclick="addTask()" class="bg-[#1978e5] text-white p-2 rounded hover:bg-[#155ab9]">Add Task</button>
@@ -422,6 +468,7 @@
             </div>
           </div>
         `;
+        form.querySelector('#add_description').value = selectedAddress;
         document.body.appendChild(form);
       }
 
@@ -471,7 +518,7 @@
         const token = localStorage.getItem('token');
         if (token) { fetchTasks(true); socket.connect(); } else window.location.href = 'login.html';
 
-        const filters = ['taskFilter', 'statusFilter', 'dateFilter'];
+        const filters = ['taskFilter', 'expeditorFilter', 'statusFilter', 'dateFilter'];
         filters.forEach(filterId => {
           document.getElementById(filterId).addEventListener('change', () => {
             currentPage = 1;
