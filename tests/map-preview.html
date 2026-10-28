@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка бесплатной карты — Expeditor Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.16.0/dist/maplibre-gl.css">
+<style>body{margin:0;font:16px system-ui;background:#f5f7fa;color:#172331}main{max-width:1100px;margin:24px auto;padding:0 20px}h1{font-size:24px}#map{height:560px;background:#e8edf0}section{display:flex;gap:16px;margin:16px 0;flex-wrap:wrap}button,input{font:inherit;padding:8px}#status{min-height:24px}.note{font-size:14px;color:#536477}</style>
+<script src="../frontend-config.js"></script><script src="../tracker-map.js"></script></head>
+<body><main><h1>Бесплатная карта Астаны</h1><p>Без регистрации, банковской карты и API-ключей. Нажмите на карту или перетащите зелёную метку.</p>
+<div id="map" aria-label="Карта Астаны"></div><p id="status" role="status">Загружаем карту…</p>
+<section><label>Широта <input id="latitude" aria-label="Широта" readonly></label><label>Долгота <input id="longitude" aria-label="Долгота" readonly></label><button id="refresh">Обновить задачи</button><button id="clear">Очистить выбор</button></section>
+<p class="note">Это проверочная страница: синие метки — демонстрационные задачи. Подключения к базе и входа в кабинет нет.</p></main>
+<script>
+const adapter=new TrackerMap({container:'map',styleUrl:window.TRACKER_CONFIG.mapStyleUrl,
+ onStatus:message=>document.getElementById('status').textContent=message,
+ onSelect:point=>{document.getElementById('latitude').value=point?point.latitude.toFixed(6):'';document.getElementById('longitude').value=point?point.longitude.toFixed(6):'';}});
+const tasks=[{id:1,latitude:51.1282,longitude:71.4304,description:'Байтерек — демонстрационная задача'},{id:2,latitude:51.14,longitude:71.45,description:'Вторая демонстрационная задача'}];
+adapter.setTasks(tasks);
+document.getElementById('refresh').onclick=()=>adapter.setTasks(tasks);
+document.getElementById('clear').onclick=()=>adapter.clearSelection();
+window.addEventListener('beforeunload',()=>adapter.destroy());
+</script></body></html>
