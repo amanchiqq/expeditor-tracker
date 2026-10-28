@@ -6,6 +6,8 @@
   <link rel="stylesheet" as="style" onload="this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&family=Space+Grotesk%3Awght%40400%3B500%3B700" />
   <title>Login - Expeditor Tracker</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script src="frontend-config.js"></script>
+  <script src="app-client.js"></script>
 </head>
 <body>
   <div class="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden" style='font-family: "Space Grotesk", "Noto Sans", sans-serif;'>
@@ -50,7 +52,7 @@
             </label>
           </div>
           <p class="text-[#4e7097] text-sm font-normal leading-normal pb-3 pt-1 px-4 text-center">
-            <a href="#" class="underline">Если у вас еще нет аккаунта, зарегистрируйтесь</a>
+            <span>Для доступа обратитесь к администратору.</span>
           </p>
         </div>
       </div>
@@ -67,7 +69,7 @@
         }
 
         try {
-          const response = await fetch('http://localhost:8000/token', {
+          const response = await fetch(`${API_BASE}/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`

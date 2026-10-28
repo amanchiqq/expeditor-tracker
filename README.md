@@ -1,174 +1,85 @@
 # Expeditor Tracker
 
-A web application designed to track tasks for expeditors in Astana using 2GIS maps. This project combines a FastAPI backend with a PostgreSQL database and a frontend built with HTML, CSS (Tailwind), and JavaScript, featuring interactive maps and real-time updates via WebSocket.
+Общий кабинет диспетчеров: задачи, фильтры, карта Астаны и обновления Socket.IO. Все авторизованные диспетчеры имеют доступ ко всем задачам. Создание пользователей выполняет администратор через CLI.
 
-## Features
-- **User Authentication:** Secure login with JWT tokens using `user1`/`password`.
-- **Task Management:** Add, view, and delete tasks with coordinates (latitude and longitude).
-- **Map Visualization:** Display tasks on a 2GIS map, limited to the Astana region (latitude 51–52, longitude 71–72), with clickable markers and temporary labels.
-- **Filtering:** Filter tasks by `expeditor_id` for targeted views.
-- **Pagination:** Navigate through tasks with 10 per page using "Previous" and "Next" buttons.
-- **Chart Visualization:** Display a bar chart of tasks distributed by expeditor ID using Chart.js.
-- **Geocoding:** Convert Astana addresses to coordinates using 2GIS Suggest API.
-- **Real-Time Updates:** WebSocket integration for live marker updates (currently basic implementation).
+**[План реализации и критерии готовности](IMPLEMENTATION_PLAN.md).** Исторический отчёт: [REPORT.markdown](REPORT.markdown).
 
-## How It Works
-- **Backend (FastAPI):** Handles API requests for authentication (`/token`), task CRUD operations (`/tasks`, `/tasks/{task_id}`), and WebSocket connections. Data is stored in a PostgreSQL database.
-- **Frontend:** A single-page application (`index.html`) with a map, task table, form for adding tasks, and a chart. Tasks are fetched after login, and map markers update dynamically.
-- **Workflow:**
-  1. Log in to obtain a JWT token.
-  2. Add tasks with coordinates or use geocoding to find them.
-  3. View tasks on the map and table, filter or paginate as needed.
-  4. Delete tasks or refresh data manually.
-  5. WebSocket updates markers in real-time (pending full implementation).
+## Требования
 
-## Setup
+Python 3.11, PostgreSQL 16, Node.js 22 для JS-тестов и необязательной сборки CSS. Один процесс API: доставка Socket.IO между несколькими workers пока не реализована.
 
-### Prerequisites
-- Python 3.9+
-- PostgreSQL
-- Node.js (optional, for Tailwind CSS compilation)
+## Установка (PowerShell)
 
-### Installation
+```powershell
+git clone https://github.com/amanchiqq/expeditor-tracker.git
+cd expeditor-tracker
+python -m venv .venv
+.venv/Scripts/Activate.ps1
+python -m pip install -r requirements-dev.txt
+```
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/amanchiqq/expeditor-tracker.git
-   cd expeditor-tracker
-## Установка
-- Python 3.9+
-- PostgreSQL
-- Node.js (for Tailwind CSS compilation, optional)
-- `pip install -r requirements.txt`.
-- `uvicorn main:app --reload`.
-- `python -m http.server 8080`.
-## Функции
-- Карта с маркерами и labels.
-- Фильтр по expeditor_id.
-- Геокодинг (2GIS).
-- WebSocket.
+Создайте отдельную базу PostgreSQL и пользователя с правами на неё. Приложение не создаёт сервер БД. Затем задайте переменные в текущем терминале:
 
-# Отчёт по проекту Expeditor Tracker
+```powershell
+$env:SECRET_KEY = python -c "import secrets; print(secrets.token_urlsafe(48))"
+$env:DATABASE_URL = 'postgresql://tracker:YOUR_PASSWORD@localhost:5432/expeditor_db'
+$env:CORS_ORIGINS = 'http://localhost:8080,http://127.0.0.1:8080'
+python scripts/migrate.py
+python scripts/create_user.py
+python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
 
-## Завершение недели 2
-- Маркеры с метками по клику.
-- Геокодинг без Suggest API (экономия лимитов 2GIS).
-- WebSocket обновляет маркеры.
-- Демо готово: [expeditor-tracker-demo-compressed.mp4](expeditor-tracker-demo-compressed.mp4).
+Пароль вводится скрыто; стандартного аккаунта/пароля нет. Для постоянного окружения сохраните секрет в менеджере секретов или настройках сервиса: новая генерация при каждом запуске аннулирует прежние JWT. Файл .env.example описывает переменные; автоматической загрузки .env нет. Для Bash используйте export вместо синтаксиса PowerShell.
 
+## Интерфейс
 
-# Expeditor Tracker
+В другом терминале из папки проекта:
 
-A web application to track tasks for expeditors in Astana using 2GIS maps.
+```powershell
+python -m http.server 8080 --bind 127.0.0.1
+```
 
-## Features
-- User authentication (login with `user1`/`password`).
-- Add, view, and delete tasks with coordinates.
-- Display tasks on a map (Astana region only).
-- Filter tasks by `expeditor_id`.
-- Pagination for task list.
-- Chart visualization of tasks by expeditor.
+Откройте http://localhost:8080. index.html ведёт на dashboard.html, без токена выполняется переход на login.html. Успешный вход действует 30 минут; истёкшая сессия требует повторного входа.
 
-## Notes
-- Tasks are loaded automatically on page load if a valid token is present in `localStorage`. Log in to ensure the latest data.
-- 
-## Setup
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/amanchiqq/expeditor-tracker.git
-   cd expeditor-tracker
+В frontend-config.js заданы публичный URL API и ключи 2GIS. По умолчанию API использует хост страницы и порт 8000. Для другого сервера измените apiBase и разрешённые CORS origins. Ключи карты/geocoding нужно получить и настроить самостоятельно, ограничив разрешённые домены; это публичные браузерные ключи. Работоспособность внешнего API и лимиты проверяются отдельно. Без ключей доступны таблица, CRUD и ручной ввод координат.
 
-2. **Create a virtual environment and install dependencies::**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
+Таблица отображает текущую страницу, диаграмма — все задачи текущего фильтра. Карта пока отображает только задачи в диапазоне Астаны: широта 51–52, долгота 71–72. Реального источника геолокации и расчёта маршрутов пока нет.
 
-3. **Set up PostgreSQL database::**
-      Create the database:
-   ```bash
-   psql -U postgres
-   CREATE DATABASE expeditor_db;
-   \q
-   ```
-   Connect and create tables:
-   ```bash
-   psql -U aman -d expeditor_db -h localhost
-   ```
-   Run the following SQL:
-   ```sql
-   CREATE TABLE users (
-    username VARCHAR(50) PRIMARY KEY,
-    password VARCHAR(255) NOT NULL
-   );
+## Даты и API
 
-   CREATE TABLE tasks (
-    id SERIAL PRIMARY KEY,
-    expeditor_id INTEGER NOT NULL,
-    description VARCHAR(255),
-    latitude FLOAT NOT NULL,
-    longitude FLOAT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-   );
+- POST /token — form-urlencoded username/password.
+- GET /tasks — task_id, expeditor_id, status, date (YYYY-MM-DD, UTC), page >= 1, per_page 1…100.
+- GET /tasks/{id}, POST /tasks, PUT /tasks/{id}, DELETE /tasks/{id} — Bearer JWT.
+- status: in_progress или completed; expeditor_id > 0; description до 255 символов.
+- latitude/longitude либо обе отсутствуют, либо обе заданы в допустимых диапазонах.
+- eta: null или ISO datetime с часовым поясом. Интерфейс переводит локальный ввод в UTC.
+- PUT полностью заменяет редактируемые поля; это не PATCH.
+- /docs — описание HTTP API.
 
-   INSERT INTO users (username, password) VALUES ('user1', '$2b$12$hYwUUbORDdilNN8/4ePvHuisBHL/dvdgS8JPgKdk1LN/NOLGJzRs.'); -- Use hashed password (e.g., via bcrypt)
+Socket.IO: path /socket.io, auth: {token: JWT}. Сервер публикует tasks_changed с action и task_id только в комнату авторизованных диспетчеров после успешной записи. Клиент перечитывает /tasks после события и reconnect. Нотификации не имеют гарантии доставки; ошибка отправки не отменяет уже выполненный CRUD. Синтетический location_update удалён. Изменения напрямую в БД уведомлений не создают.
 
-4. **Run the backend:**
-   ```bash
-   uvicorn main:app --reload
+## Миграции существующей базы
 
-5. **Run the frontend::**
-   ```bash
-   python -m http.server 8080
+До запуска сделайте backup. 001_dispatcher_schema.sql поддерживает пустую БД и схему из прежнего README: добавляет status/eta, ограничения и индексы. Прежний TIMESTAMP без timezone интерпретируется как UTC. Если раньше хранилось местное время, сначала согласуйте преобразование на копии БД. Нестандартные схемы необходимо проверить отдельно.
 
-6. **Open the app:**
-   
-   Go to http://localhost:8080/index.html and log in with user1/password.
+Миграции транзакционные, применяются один раз под advisory lock, проверяют контрольную сумму. Повторный запуск безопасен. Некорректные старые записи могут нарушить новые ограничения: миграция откатится, данные автоматически не удаляются. Исправьте записи на копии и повторите проверку. Уже применённые миграции не редактируют; добавляют следующую.
 
+## Тесты
 
-## Notes
-- Tasks are loaded only after login. If a valid token exists in `localStorage`, the app may attempt to load tasks immediately—log in to ensure the latest data.
-- The map displays only tasks within Astana coordinates (latitude 51–52, longitude 71–72).
-- Use a secure `SECRET_KEY` in production (currently set to "amanaman" for development).
-- Geocoding uses 2GIS API with a demo key; replace it with your own for production.
+```powershell
+python -m pytest -q
+node --test tests/frontend.test.cjs
+```
 
-## Project Report: Expeditor Tracker
+Для настоящих интеграционных проверок задайте отдельную тестовую БД:
 
-### Completion of Week 2
-- **Achievements:**
-  - Implemented markers with clickable labels that display for 3 seconds.
-  - Added geocoding without Suggest API to save 2GIS API limits.
-  - Integrated WebSocket to update markers in real-time.
-  - Created a demo video: [expeditor-tracker-demo-compressed.mp4](expeditor-tracker-demo-compressed.mp4).
+```powershell
+$env:TEST_DATABASE_URL = 'postgresql://tracker:TEST_PASSWORD@localhost:5432/tracker_test'
+python -m pytest -q
+```
 
-### Completion of Week 3
-- **Achievements:**
-  - Completed task CRUD operations (add, view, delete).
-  - Added pagination and filtering by `expeditor_id`.
-  - Integrated a chart to visualize task distribution.
-  - Ensured tasks load only after login by removing automatic `fetchTasks()` call.
-- **Testing (Day 5, 8 June 2025):**
-  - Added a task via the form: Works.
-  - Deleted a task via the "Delete" button: Works.
-  - Switched pages with "Previous/Next": Works.
-  - Applied filter by `expeditor_id`: Works.
-  - Checked console for errors: None found.
+Интеграционные тесты создают уникальную временную схему и удаляют её после проверки; пользователь тестовой БД должен иметь право CREATE SCHEMA. Не используйте рабочую БД. Без TEST_DATABASE_URL эти две проверки явно пропускаются. GitHub Actions поднимает PostgreSQL и запускает их вместе с остальными тестами.
 
-## Problems and Solutions
-- **Initial Task Loading:** Tasks loaded automatically on page start due to `fetchTasks()` being called at script end. **Solution:** Removed the automatic call, ensuring tasks load only after login.
-- **Pagination Error:** Requests without `expeditor_id` returned a 500 error due to SQL issues. **Solution:** Fixed SQL query logic in `get_tasks` to handle cases with and without filters.
-- **WebSocket Disconnects:** Clients disconnected due to token issues. **Solution:** Ensured token is passed correctly via `socket.auth.token`.
+Локально проверены API с подменённой БД, валидация, JWT, ошибки, освобождение подключений, handshake/auth/event Socket.IO через ASGI и JS-контракты. В GitHub Actions на PostgreSQL 16 прошли все 54 Python-теста и 8 JS-проверок, включая пустую и прежнюю схемы БД. Браузерный E2E требует отдельной приёмки согласно плану.
 
-## Future Plans
-- **Enhance Functionality:** Add task editing and status updates.
-- **Geolocation Integration:** Use user geolocation to display their position and calculate routes to tasks.
-- **Admin Panel:** Develop an admin interface (optional) to manage users and tasks.
-- **WebSocket Improvements:** Fully implement real-time updates for all task changes.
-
-## API Endpoints
-- `POST /token` - Login and get a JWT token.
-- `GET /tasks` - Get tasks (supports `expeditor_id`, `page`, and `per_page` query params).
-- `POST /tasks` - Add a new task.
-- `DELETE /tasks/{task_id}` - Delete a task by ID.
-
-   
+Для разработки CSS (не требуется для Python API): npm ci, npm run build:css или npm run watch:css. node_modules не хранится в Git.
