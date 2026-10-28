@@ -22,10 +22,15 @@ async def list_tasks(conn, *, page, per_page, **criteria):
     # One snapshot keeps total, aggregates and page consistent under concurrent edits.
     async with conn.transaction(isolation="repeatable_read", readonly=True):
         total = await conn.fetchval("SELECT COUNT(*) FROM tasks" + where, *params)
-        counts = await conn.fetch("SELECT expeditor_id, COUNT(*) AS count FROM tasks" + where + " GROUP BY expeditor_id ORDER BY expeditor_id", *params)
+        counts = await conn.fetch("SELECT expeditor_id, status, COUNT(*) AS count FROM tasks" + where + " GROUP BY expeditor_id, status ORDER BY expeditor_id, status", *params)
         tasks = await conn.fetch(f"SELECT {COLUMNS} FROM tasks" + where + f" ORDER BY id ASC LIMIT ${len(params)+1} OFFSET ${len(params)+2}", *params, per_page, (page-1)*per_page)
+    expeditor_counts, status_counts = {}, {"in_progress": 0, "completed": 0}
+    for row in counts:
+        key = str(row["expeditor_id"])
+        expeditor_counts[key] = expeditor_counts.get(key, 0) + row["count"]
+        status_counts[row["status"]] += row["count"]
     return {"tasks": [dict(row) for row in tasks], "total": total, "page": page, "per_page": per_page,
-            "expeditor_counts": {str(row["expeditor_id"]): row["count"] for row in counts}}
+            "expeditor_counts": expeditor_counts, "status_counts": status_counts}
 
 
 async def get_task(conn, task_id):

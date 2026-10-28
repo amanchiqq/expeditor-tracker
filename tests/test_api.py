@@ -27,7 +27,7 @@ def environment(monkeypatch):
     record = {"id": 1, "expeditor_id": 1, "description": "Delivery", "latitude": 51.1,
               "longitude": 71.4, "status": "in_progress", "created_at": datetime.now(timezone.utc), "eta": None}
     async def rows(sql, *args):
-        return [{"expeditor_id": 1, "count": 1}] if "GROUP BY" in sql else [record]
+        return [{"expeditor_id": 1, "status": "in_progress", "count": 1}] if "GROUP BY" in sql else [record]
     conn.fetch.side_effect = rows
     conn.fetchval.return_value = 1
     conn.fetchrow.return_value = record
@@ -248,3 +248,54 @@ def test_socket_websocket_rejects_invalid_token(environment):
         assert ws.receive_text().startswith('0{')
         ws.send_text('40{"token":"invalid"}')
         assert ws.receive_text().startswith('44')
+
+
+@pytest.mark.parametrize("query", ["ab", "   ", "x"*201])
+def test_address_query_validation(environment, monkeypatch, query):
+    c, *_ = environment
+    search=AsyncMock()
+    monkeypatch.setattr(m.api.state.geocoder,'search',search)
+    assert c.get('/geocode',params={'q':query}).status_code==422
+
+
+def test_address_search_requires_auth(environment):
+    c, *_ = environment
+    m.api.dependency_overrides.clear()
+    assert c.get('/geocode?q=Astana').status_code==401
+
+
+def test_address_search_results(environment, monkeypatch):
+    c, *_ = environment
+    result={'label':'Baiterek, Astana','latitude':51.1232,'longitude':71.4288}
+    monkeypatch.setattr(m.api.state.geocoder,'search',AsyncMock(return_value=[result]))
+    response=c.get('/geocode?q=Baiterek')
+    assert response.status_code==200
+    assert response.json()['results']==[result]
+    m.api.state.geocoder.search.assert_awaited_once_with('Baiterek','dispatcher')
+
+
+@pytest.mark.parametrize('kind,status', [('busy',429),('offline',503)])
+def test_address_search_error_contract(environment, monkeypatch, kind, status):
+    c, *_ = environment
+    error=m.SearchBusy() if kind=='busy' else m.SearchUnavailable()
+    monkeypatch.setattr(m.api.state.geocoder,'search',AsyncMock(side_effect=error))
+    result=c.get('/geocode?q=Astana')
+    assert result.status_code==status
+    assert 'PhotonSearch' not in result.text
+    if status==429: assert result.headers['retry-after']=='5'
+
+
+def test_statistics_group_multiple_statuses_per_expeditor(environment):
+    c, db, *_ = environment
+    async def rows(sql,*args):
+        if 'GROUP BY' in sql:
+            return [{'expeditor_id':1,'status':'in_progress','count':2},
+                    {'expeditor_id':1,'status':'completed','count':3},
+                    {'expeditor_id':2,'status':'completed','count':1}]
+        return []
+    db.fetch.side_effect=rows
+    db.fetchval.return_value=6
+    response=c.get('/tasks?expeditor_id=1')
+    assert response.status_code==200
+    assert response.json()['expeditor_counts']=={'1':5,'2':1}
+    assert response.json()['status_counts']=={'in_progress':2,'completed':4}

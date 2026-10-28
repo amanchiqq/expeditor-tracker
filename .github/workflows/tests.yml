@@ -31,3 +31,16 @@ jobs:
       - run: python scripts/migrate.py
       - run: python -m pytest -q
       - run: node --test tests/frontend.test.cjs
+      - run: pip install -r requirements-browser.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: npm install --no-save --ignore-scripts --package-lock=false socket.io-client@4.7.5
+      - name: Browser workflow with PostgreSQL and two dispatchers
+        run: python -m pytest tests/test_browser.py -q -s
+        env:
+          RUN_BROWSER_E2E: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-proof
+          path: test-results/
+          if-no-files-found: ignore

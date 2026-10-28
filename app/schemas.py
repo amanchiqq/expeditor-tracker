@@ -39,6 +39,7 @@ class TaskPage(BaseModel):
     page: int
     per_page: int
     expeditor_counts: dict[str, int]
+    status_counts: dict[str, int]
 
 
 class Token(BaseModel):

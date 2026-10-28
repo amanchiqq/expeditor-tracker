@@ -40,6 +40,7 @@
         });
         this.setTasks(this.tasks);
         if (this.selection) this.drawSelection();
+        if (this.focusPoint) this.map.flyTo({center:this.focusPoint,zoom:16});
         return true;
       } catch (error) {
         if (!this.disposed) this.onStatus('Карта недоступна. Задачи и ручной ввод координат продолжают работать.');
@@ -80,6 +81,13 @@
       return true;
     }
 
+    focus(latitude, longitude) {
+      if (!this.select(latitude, longitude)) return false;
+      this.focusPoint = [longitude, latitude];
+      if (this.map) this.map.flyTo({center: this.focusPoint, zoom: 16});
+      return true;
+    }
+
     drawSelection() {
       if (!this.map) return;
       if (!this.selectionMarker) {
@@ -98,6 +106,7 @@
       if (this.selectionMarker) this.selectionMarker.remove();
       this.selectionMarker = null;
       this.selection = null;
+      this.focusPoint = null;
       this.onSelect(null);
     }
 

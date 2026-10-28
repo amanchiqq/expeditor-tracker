@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const root = path.join(__dirname, '..');
 
-for (const file of ['dashboard.html','login.html','index.html','app-client.js','frontend-config.js','tracker-map.js','tests/map-preview.html']) {
+for (const file of ['dashboard.html','login.html','index.html','app-client.js','frontend-config.js','tracker-map.js','address-search.js','tests/map-preview.html']) {
   test(`JavaScript syntax: ${file}`, () => {
     const source = fs.readFileSync(path.join(root,file),'utf8');
     assert.ok(!source.includes('\uFFFD'), `Invalid text encoding in ${file}`);
@@ -24,7 +24,7 @@ function context() {
       addEventListener(name,cb){this.listeners[name]=cb;},
       set innerHTML(value){throw Error('Untrusted HTML insertion');}};
   }
-  const ctx = {window:{TRACKER_CONFIG:{apiBase:'http://localhost:8000'}},document:{createElement:element},Date};
+  const ctx = {URLSearchParams,window:{TRACKER_CONFIG:{apiBase:'http://localhost:8000'}},document:{createElement:element},Date};
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(root,'app-client.js'),'utf8'),ctx);
   return {ctx,element};
@@ -66,6 +66,7 @@ function mapContext() {
     constructor(options) { this.options=options;this.events={};instances.push(this); }
     on(name,fn){ this.events[name]=fn; }
     addControl(control,position){ this.controlPosition=position; }
+    flyTo(options){this.camera=options;}
     remove(){this.removed=true;}
   }
   class Marker {
@@ -162,4 +163,68 @@ test('Closing a task modal never removes the shared loading overlay',()=>{
  const page=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
  assert.ok(!page.includes("querySelector('.fixed')"));
  assert.equal((page.match(/form.className = 'task-modal'/g)||[]).length,2);
+});
+
+
+test('Executor filter is encoded together with all other task filters',()=>{
+ const {ctx}=context();
+ const url=vm.runInContext("taskListUrl({page:2,perPage:5,taskId:'7',expeditorId:'3',status:'completed',date:'2026-10-28'})",ctx);
+ const parsed=new URL(url);
+ assert.equal(parsed.searchParams.get('expeditor_id'),'3');
+ assert.equal(parsed.searchParams.get('task_id'),'7');
+ assert.equal(parsed.searchParams.get('status'),'completed');
+ assert.equal(parsed.searchParams.get('date'),'2026-10-28');
+});
+
+test('ETA edit preserves seconds and milliseconds; empty time has a readable label',()=>{
+ const {ctx}=context();
+ ctx.instant='2026-10-28T12:34:56.789+05:00';
+ assert.equal(vm.runInContext('new Date(localDateTime(instant)).toISOString()',ctx),new Date(ctx.instant).toISOString());
+ assert.equal(vm.runInContext('formatTaskTime(null)',ctx),'—');
+});
+
+test('Address selection focuses the map, including before SDK load',async()=>{
+ const {TrackerMap,library,instances}=mapContext();let resolve;
+ const adapter=new TrackerMap({container:'map',styleUrl:'style',loadLibrary:()=>new Promise(r=>resolve=r)});
+ assert.equal(adapter.focus(51.1,71.4),true);resolve(library);await adapter.ready;
+ assert.equal(instances[0].camera.zoom,16);assert.equal(adapter.selection.latitude,51.1);
+ adapter.focus(51.2,71.5);assert.equal(instances[0].camera.center[0],71.5);
+ assert.equal(adapter.focus(100,71),false);
+});
+
+function searchContext(search,onPick=()=>{}) {
+ function element(){return {value:'',children:[],listeners:{},disabled:false,textContent:'',
+  addEventListener(name,fn){this.listeners[name]=fn;},appendChild(child){this.children.push(child);},
+  replaceChildren(){this.children=[];},set innerHTML(value){throw Error('Unsafe HTML');}};}
+ const ctx={window:{},AbortController,document:{createElement:element}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(root,'address-search.js'),'utf8'),ctx);
+ const controls={form:element(),input:element(),button:element(),results:element(),status:element()};
+ const controller=new ctx.window.AddressSearch({...controls,search,onPick});
+ return {...controls,controller};
+}
+
+test('Search sends no keystroke requests and selects results as text',async()=>{
+ let calls=0,picked;
+ const item={label:'<img src=x onerror=alert(1)>',latitude:51,longitude:71};
+ const ui=searchContext(async()=>{calls++;return [item];},value=>picked=value);
+ ui.input.value='Astana';ui.input.listeners.input();assert.equal(calls,0);
+ await ui.controller.run();assert.equal(calls,1);
+ const button=ui.results.children[0].children[0];assert.equal(button.textContent,item.label);
+ button.listeners.click();assert.equal(picked,item);assert.equal(ui.results.children.length,0);
+});
+
+test('Stale search results never replace a newer input',async()=>{
+ let resolve;
+ const ui=searchContext(()=>new Promise(r=>resolve=r));
+ ui.input.value='First';const pending=ui.controller.run();
+ ui.input.value='Second';ui.input.listeners.input();resolve([{label:'Old'}]);await pending;
+ assert.equal(ui.results.children.length,0);assert.equal(ui.button.disabled,false);
+});
+
+test('Search handles short queries, empty results and provider errors',async()=>{
+ let calls=0;const ui=searchContext(async()=>{calls++;return [];});
+ ui.input.value='ab';await ui.controller.run();assert.equal(calls,0);
+ ui.input.value='Astana';await ui.controller.run();assert.ok(ui.status.textContent.includes('Ничего'));
+ ui.controller.search=async()=>{throw Error('Поиск занят');};await ui.controller.run();
+ assert.equal(ui.status.textContent,'Поиск занят');assert.equal(ui.button.disabled,false);
 });
