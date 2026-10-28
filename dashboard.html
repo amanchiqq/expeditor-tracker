@@ -7,9 +7,11 @@
   <link rel="stylesheet" as="style" onload="this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&family=Space+Grotesk%3Awght%40400%3B500%3B700" />
   <title>Dashboard - Expeditor Tracker</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-  <script src="https://mapgl.2gis.com/api/js/v1?key=0fc41365-bc9e-41ec-937e-88e6d9ff3f54"></script>
+  <script src="https://mapgl.2gis.com/api/js/v1"></script>
   <script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="frontend-config.js"></script>
+  <script src="app-client.js"></script>
 </head>
 <body>
   <div class="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden" style='--select-button-svg: url("data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724px%27 height=%2724px%27 fill=%27rgb(78,112,151)%27 viewBox=%270 0 256 256%27%3e%3cpath d=%27M181.66,170.34a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32,0l-48-48a8,8,0,0,1,11.32-11.32L128,212.69l42.34-42.35A8,8,0,0,1,181.66,170.34Zm-96-84.68L128,43.31l42.34,42.35a8,8,0,0,0,11.32-11.32l-48-48a8,8,0,0,0-11.32,0l-48,48A8,8,0,0,0,85.66,85.66Z%27%3e%3c/path%3e%3c/svg%3e'); font-family: "Space Grotesk", "Noto Sans", sans-serif;'>
@@ -34,8 +36,8 @@
             </button>
             <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-50 hidden md:block">
               <a href="#" class="block px-4 py-2 text-sm text-[#0e141b] hover:bg-[#e7edf3]">Dashboard</a>
-              <a href="#" class="block px-4 py-2 text-sm text-[#0e141b] hover:bg-[#e7edf3]">Couriers</a>
-              <a href="#" class="block px-4 py-2 text-sm text-[#0e141b] hover:bg-[#e7edf3]">Reports</a>
+
+              <button onclick="localStorage.removeItem('token'); socket.disconnect(); window.location.href='login.html'" class="block px-4 py-2 text-sm">Sign out</button>
             </div>
           </div>
           <div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-8 md:size-10" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDDa80Gjd4TDcKixaGe_WtepXYpyVYh3xHjfBNF3PiTGUCPxC1hcxnNGb-rKM9CXkSJ6-dXDyinZeJ8G8-ez_X4zwFktmnIIeKckKPswsY9Auwp4sL8_ibIzGuCetbDw-7OiVM5AyYdYpVRP3Z6akgfDTlSZ7dPttE_c-OlVMYGn9cWAAxnwOODlctaLgTLmji5vdkvIEdJngrh36pjBHcejULJKHBuDRazkLZBCZzu7RBstCqfIXCZmbqcvnTPrF6T3jp_NJZliZYk");'></div>
@@ -47,9 +49,7 @@
           <div class="flex flex-col gap-4">
             <label class="flex flex-col">
               <p class="text-[#0e141b] text-base font-medium leading-normal pb-2">Task</p>
-              <select id="taskFilter" class="form-input w-full rounded-lg border border-[#d0dbe7] bg-slate-50 focus:border-[#1978e5] h-12 p-2 text-base font-normal leading-normal">
-                <option value="">Select Task</option>
-              </select>
+              <input id="taskFilter" type="number" min="1" placeholder="Task ID" class="form-input w-full rounded-lg border border-[#d0dbe7] bg-slate-50 focus:border-[#1978e5] h-12 p-2 text-base font-normal leading-normal">
             </label>
             <label class="flex flex-col">
               <p class="text-[#0e141b] text-base font-medium leading-normal pb-2">Status</p>
@@ -60,7 +60,7 @@
               </select>
             </label>
             <label class="flex flex-col">
-              <p class="text-[#0e141b] text-base font-medium leading-normal pb-2">Date</p>
+              <p class="text-[#0e141b] text-base font-medium leading-normal pb-2">Date (UTC)</p>
               <input id="dateFilter" type="date" class="form-input w-full rounded-lg border border-[#d0dbe7] bg-slate-50 focus:border-[#1978e5] h-12 p-2 text-base font-normal leading-normal">
             </label>
             <div class="flex flex-col gap-3 mt-4">
@@ -149,6 +149,8 @@
       let geocodeLabel = null;
       let tempLabels = [];
       let currentPage = 1;
+      let totalPages = 1;
+      let fetchGeneration = 0;
       const tasksPerPage = 5;
       let taskChart = null;
       let selectedLat = null;
@@ -165,22 +167,26 @@
       }
 
       try {
+        if (!window.TRACKER_CONFIG.mapKey) throw new Error('Configure mapKey in frontend-config.js to enable the map');
         map = new mapgl.Map('map', {
           center: [71.47, 51.16],
           zoom: 12,
-          key: '0fc41365-bc9e-41ec-937e-88e6d9ff3f54'
+          key: window.TRACKER_CONFIG.mapKey
         });
         console.log('Map initialized successfully');
       } catch (error) {
         console.error('Map initialization error:', error);
       }
 
-      const socket = io('http://localhost:8000', { path: '/socket.io', transports: ['websocket'], auth: { token: localStorage.getItem('token') || '' } });
+      const socket = io(API_BASE, { autoConnect: false, path: '/socket.io', transports: ['websocket'], auth: { token: localStorage.getItem('token') || '' } });
       socket.on('connect', () => console.log('Connected to WebSocket'));
-      socket.on('location_update', (data) => updateMapMarker(data));
+      socket.on('connect', () => fetchTasks(true));
+      socket.on('tasks_changed', () => fetchTasks(true));
+      socket.on('disconnect', reason => { if (reason === 'io server disconnect') { localStorage.removeItem('token'); window.location.href = 'login.html'; } });
       socket.on('connect_error', (err) => console.error('WebSocket error:', err));
 
       async function fetchTasks(clearMapFlag = false) {
+        const generation = ++fetchGeneration;
         showLoading();
         const token = localStorage.getItem('token');
         if (!token) {
@@ -192,23 +198,26 @@
         const taskFilter = document.getElementById('taskFilter').value;
         const statusFilter = document.getElementById('statusFilter').value;
         const dateFilter = document.getElementById('dateFilter').value;
-        const url = `http://localhost:8000/tasks?page=${currentPage}&per_page=${tasksPerPage}${taskFilter ? `&task_id=${taskFilter}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}${dateFilter ? `&date=${dateFilter}` : ''}`;
+        const url = `${API_BASE}/tasks?page=${currentPage}&per_page=${tasksPerPage}${taskFilter ? `&task_id=${taskFilter}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}${dateFilter ? `&date=${dateFilter}` : ''}`;
         console.log('Fetching tasks from:', url);
         try {
-          const response = await fetch(url, {
+          const response = await trackerFetch(url, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (!response.ok) {
             throw new Error(`HTTP error ${response.status}`);
           }
           const data = await response.json();
+          if (generation !== fetchGeneration) return;
+          totalPages = Math.max(1, Math.ceil(data.total / tasksPerPage));
+          if (currentPage > totalPages) { currentPage = totalPages; return fetchTasks(true); }
           console.log('Received data:', data);
           let tasks = data.tasks || [];
 
-          if (clearMapFlag || (tasks.length > 0 && (taskFilter || statusFilter || dateFilter))) clearMap();
+          clearMap();
           if (tasks.length > 0) {
             tasks.forEach((task, index) => {
-              if (task.latitude >= 51 && task.latitude <= 52 && task.longitude >= 71 && task.longitude <= 72) {
+              if (map && task.latitude !== null && task.longitude !== null && task.latitude >= 51 && task.latitude <= 52 && task.longitude >= 71 && task.longitude <= 72) {
                 const marker = new mapgl.Marker(map, {
                   coordinates: [task.longitude, task.latitude],
                   color: '#1978e5',
@@ -225,7 +234,7 @@
                   });
                   tempLabels.push(tempLabel);
                   setTimeout(() => {
-                    tempLabel.destroy();
+                    if (tempLabels.includes(tempLabel)) tempLabel.destroy();
                     tempLabels = tempLabels.filter(l => l !== tempLabel);
                   }, 3000);
                 });
@@ -236,45 +245,17 @@
             const tbody = document.getElementById('tasksBody');
             tbody.innerHTML = '';
             tasks.forEach(task => {
-              const row = document.createElement('tr');
-              row.className = 'border-t border-[#d0dbe7] hover:bg-[#f5f7fa]';
-              row.innerHTML = `
-                <td class="px-4 py-2 text-[#4e7097] text-sm font-normal">${task.id}</td>
-                <td class="px-4 py-2 text-[#4e7097] text-sm font-normal">${task.description || 'N/A'}</td>
-                <td class="px-4 py-2">
-                  <button class="w-full h-8 rounded-lg bg-[#e7edf3] text-[#0e141b] text-sm font-medium hover:bg-[#d0dbe7]">${task.status || 'N/A'}</button>
-                </td>
-                <td class="px-4 py-2 text-[#4e7097] text-sm font-normal">${task.created_at || 'N/A'}</td>
-                <td class="px-4 py-2 text-[#4e7097] text-sm font-normal">${task.eta || 'N/A'}</td>
-                <td class="px-4 py-2">
-                  <button onclick="updateTaskForm(${task.id})" class="bg-yellow-500 text-white p-1 rounded mr-1 hover:bg-yellow-600">Edit</button>
-                  <button onclick="deleteTask(${task.id})" class="bg-red-500 text-white p-1 rounded hover:bg-red-600">Delete</button>
-                </td>
-              `;
-              tbody.appendChild(row);
+              appendTaskRow(tbody, task, updateTaskForm, deleteTask);
             });
           } else {
             const tbody = document.getElementById('tasksBody');
             tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-[#4e7097]">No tasks found</td></tr>';
           }
 
-          const taskFilterSelect = document.getElementById('taskFilter');
-          const uniqueTasks = [...new Set(tasks.map(task => task.id))];
-          taskFilterSelect.innerHTML = '<option value="">Select Task</option>';
-          uniqueTasks.forEach(taskId => {
-            const task = tasks.find(t => t.id === taskId);
-            const option = document.createElement('option');
-            option.value = taskId;
-            option.textContent = `Task ${taskId} (${task?.description || 'N/A'})`;
-            taskFilterSelect.appendChild(option);
-          });
+          document.getElementById('pageInfo').textContent = `Page ${data.page} of ${totalPages}`;
 
-          document.getElementById('pageInfo').textContent = `Page ${data.page} of ${Math.ceil(data.total / tasksPerPage)}`;
-
-          const expCounts = {};
-          tasks.forEach(task => {
-            expCounts[task.expeditor_id] = (expCounts[task.expeditor_id] || 0) + 1;
-          });
+          const expCounts = data.expeditor_counts || {};
+          if (typeof Chart === 'undefined') return;
           if (taskChart) taskChart.destroy();
           const ctx = document.getElementById('taskChart').getContext('2d');
           taskChart = new Chart(ctx, {
@@ -303,10 +284,11 @@
         } catch (error) {
           console.error('Fetch tasks error:', error);
           const tbody = document.getElementById('tasksBody');
-          tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-[#4e7097]">Error loading tasks. Server returned: ${error.message}</td></tr>';
+          if (generation !== fetchGeneration) return;
+          tbody.textContent = `Error loading tasks: ${error.message}`;
           alert(`Error loading tasks: ${error.message}. Please check server configuration.`);
         } finally {
-          hideLoading();
+          if (generation === fetchGeneration) hideLoading();
         }
       }
 
@@ -316,7 +298,6 @@
         markers = [];
         tempLabels = [];
         if (geocodeMarker) geocodeMarker.destroy();
-        if (geocodeLabel) geocodeLabel.destroy();
         geocodeMarker = null;
         geocodeLabel = null;
         selectedLat = null;
@@ -337,6 +318,7 @@
       }
 
       function nextPage() {
+        if (currentPage >= totalPages) return;
         currentPage++;
         fetchTasks(false);
       }
@@ -355,7 +337,7 @@
           return;
         }
         try {
-          const response = await fetch(`http://localhost:8000/tasks/${taskId}`, {
+          const response = await trackerFetch(`${API_BASE}/tasks/${taskId}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
           });
@@ -379,7 +361,7 @@
           return;
         }
         try {
-          const response = await fetch(`http://localhost:8000/tasks/${taskId}`, {
+          const response = await trackerFetch(`${API_BASE}/tasks/${taskId}`, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` }
           });
@@ -391,14 +373,14 @@
               <div class="bg-white p-6 rounded-lg shadow-lg border border-[#d0dbe7] w-96">
                 <h3 class="text-lg font-bold mb-4 text-[#0e141b]">Edit Task ${taskId}</h3>
                 <input id="edit_expeditor_id" type="number" value="${task.expeditor_id}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-                <input id="edit_description" type="text" value="${task.description || ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-                <input id="edit_latitude" type="number" step="0.000001" value="${task.latitude || ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0" readonly>
-                <input id="edit_longitude" type="number" step="0.000001" value="${task.longitude || ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0" readonly>
+                <input id="edit_description" type="text" value="" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+                <input id="edit_latitude" type="number" step="0.000001" value="${task.latitude ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+                <input id="edit_longitude" type="number" step="0.000001" value="${task.longitude ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <select id="edit_status" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                   <option value="in_progress" ${task.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
                   <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Completed</option>
                 </select>
-                <input id="edit_eta" type="datetime-local" value="${task.eta ? new Date(task.eta).toISOString().slice(0, 16) : ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+                <input id="edit_eta" type="datetime-local" value="${localDateTime(task.eta)}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <div class="flex justify-end">
                   <button onclick="document.querySelector('.fixed').remove()" class="bg-gray-500 text-white p-2 rounded mr-2 hover:bg-gray-600">Cancel</button>
                   <button onclick="updateTask(${taskId})" class="bg-[#1978e5] text-white p-2 rounded hover:bg-[#155ab9]">Save</button>
@@ -406,6 +388,7 @@
               </div>
             </div>
           `;
+          form.querySelector('#edit_description').value = task.description || '';
           document.body.appendChild(form);
         } catch (error) {
           console.error('Error fetching task for edit:', error);
@@ -431,10 +414,10 @@
           latitude: parseFloat(document.getElementById('edit_latitude').value),
           longitude: parseFloat(document.getElementById('edit_longitude').value),
           status: document.getElementById('edit_status').value,
-          eta: etaValue ? etaValue : null
+          eta: etaValue ? new Date(etaValue).toISOString() : null
         };
         try {
-          const response = await fetch(`http://localhost:8000/tasks/${taskId}`, {
+          const response = await trackerFetch(`${API_BASE}/tasks/${taskId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(task)
@@ -451,25 +434,15 @@
         }
       }
 
-      function updateMapMarker(data) {
-        clearMap();
-        if (data.latitude >= 51 && data.latitude <= 52 && data.longitude >= 71 && data.longitude <= 72) {
-          const marker = new mapgl.Marker(map, {
-            coordinates: [data.longitude, data.latitude],
-            color: '#1978e5',
-            size: [30, 30]
-          });
-          markers.push({ task_id: data.id, marker });
-        }
-      }
 
       async function geocodeAddress() {
         const address = document.getElementById('address').value;
         if (!address) return alert('Enter an address');
+        if (!window.TRACKER_CONFIG.geocodeKey) return alert('Configure geocodeKey in frontend-config.js or enter coordinates manually');
         try {
-          const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`Астана, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=0fc41365-bc9e-41ec-937e-88e6d9ff3f54`;
+          const url = `https://catalog.api.2gis.com/3.0/suggests?q=${encodeURIComponent(`������, ${address}`)}&fields=items.point,items.address_name&city_id=4504102237533747&key=${encodeURIComponent(window.TRACKER_CONFIG.geocodeKey)}`;
           console.log('Geocode URL:', url);
-          const response = await fetch(url);
+          const response = await trackerFetch(url);
           if (!response.ok) throw new Error(`Geocode HTTP error ${response.status}`);
           const data = await response.json();
           if (data.result && data.result.items.length > 0) {
@@ -496,10 +469,11 @@
                 });
                 tempLabels.push(geocodeLabel);
                 console.log('Temp label added for geocode');
+                const label = geocodeLabel;
                 setTimeout(() => {
-                  geocodeLabel.destroy();
-                  tempLabels = tempLabels.filter(l => l !== geocodeLabel);
-                  geocodeLabel = null;
+                  if (tempLabels.includes(label)) label.destroy();
+                  tempLabels = tempLabels.filter(l => l !== label);
+                  if (geocodeLabel === label) geocodeLabel = null;
                 }, 3000);
               });
               console.log('Geocode marker added:', item.point);
@@ -514,7 +488,7 @@
       }
 
       async function addTaskWithCoordinates() {
-        if (!selectedLat || !selectedLon) return alert('Please find coordinates first');
+        // Coordinates can be entered manually when geocoding is unavailable.
         const form = document.createElement('div');
         form.innerHTML = `
           <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
@@ -522,8 +496,8 @@
               <h3 class="text-lg font-bold mb-4 text-[#0e141b]">Add New Task</h3>
               <input id="add_expeditor_id" type="number" placeholder="Expeditor ID" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
               <input id="add_description" type="text" placeholder="Description" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
-              <input id="add_latitude" type="number" step="0.000001" value="${selectedLat}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0" readonly>
-              <input id="add_longitude" type="number" step="0.000001" value="${selectedLon}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0" readonly>
+              <input id="add_latitude" type="number" step="0.000001" value="${selectedLat ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
+              <input id="add_longitude" type="number" step="0.000001" value="${selectedLon ?? ''}" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
               <select id="add_status" class="w-full border rounded p-2 mb-2 border-[#d0dbe7] focus:border-[#1978e5] focus:ring-0">
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
@@ -555,15 +529,15 @@
           latitude: parseFloat(document.getElementById('add_latitude').value),
           longitude: parseFloat(document.getElementById('add_longitude').value),
           status: document.getElementById('add_status').value,
-          eta: etaValue ? etaValue : null
+          eta: etaValue ? new Date(etaValue).toISOString() : null
         };
-        if (!task.expeditor_id || (!task.latitude || !task.longitude)) {
+        if (task.expeditor_id <= 0 || !Number.isFinite(task.latitude) || !Number.isFinite(task.longitude)) {
           alert('Expeditor ID, latitude, and longitude are required');
           hideLoading();
           return;
         }
         try {
-          const response = await fetch('http://localhost:8000/tasks', {
+          const response = await trackerFetch(`${API_BASE}/tasks`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(task)
@@ -585,7 +559,7 @@
 
       document.addEventListener('DOMContentLoaded', () => {
         const token = localStorage.getItem('token');
-        if (token) fetchTasks(true);
+        if (token) { fetchTasks(true); socket.connect(); } else window.location.href = 'login.html';
 
         const filters = ['taskFilter', 'statusFilter', 'dateFilter'];
         filters.forEach(filterId => {
@@ -601,16 +575,7 @@
         });
       });
 
-      socket.on("location_update", function(data) {
-        console.log("Location update:", data);
-        if (map && data.id) {
-          const marker = markers.find(m => m.task_id === data.id);
-          if (marker) {
-            marker.marker.setLatLng([data.latitude, data.longitude]);
-            map.panTo([data.latitude, data.longitude]);
-          }
-        }
-      });
+
     </script>
   </div>
 </body>

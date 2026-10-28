@@ -1,11 +1,12 @@
 {
   "name": "expeditor-tracker",
   "version": "1.0.0",
-  "description": "Трекер для экспедиторов в Астане. ## Установка - Python 3.11, PostgreSQL. - `pip install -r requirements.txt`. - `uvicorn main:app --reload`. - `python -m http.server 8080`. ## Функции - Карта с маркерами и labels. - Фильтр по expeditor_id. - Геокодинг (2GIS). - WebSocket.",
+  "description": "Shared dispatcher task tracker built with FastAPI, PostgreSQL and Socket.IO",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build:css": "tailwindcss -i ./styles.css -o ./output.css --watch"
+    "test": "node --test tests/frontend.test.cjs",
+    "build:css": "tailwindcss -i ./styles.css -o ./output.css --minify",
+    "watch:css": "tailwindcss -i ./styles.css -o ./output.css --watch"
   },
   "repository": {
     "type": "git",
